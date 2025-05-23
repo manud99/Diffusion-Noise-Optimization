@@ -1,5 +1,6 @@
 from dno_optimized.callbacks.callback import Callback, CallbackList
 from dno_optimized.callbacks.early_stopping import EarlyStoppingCallback
+from dno_optimized.callbacks.generate_video import GenerateVideoCallback
 from dno_optimized.callbacks.profiler import ProfilerCallback
 from dno_optimized.callbacks.save_top_k import SaveTopKCallback
 from dno_optimized.callbacks.tensorboard import TensorboardCallback
@@ -24,11 +25,13 @@ def create_callback(name: str, options: GenerateOptions, callback_args: dict) ->
             return SaveTopKCallback.from_config(options, callback_args)
         case "profiler":
             return ProfilerCallback.from_config(options, callback_args)
+        case "generate_video":
+            return GenerateVideoCallback.from_config(options, callback_args)
         case _:
             raise KeyError(f"`{name}` is not a valid callback name")
 
 
-def default_callbacks(options: GenerateOptions, run_post_init: bool = True) -> CallbackList:
+def default_callbacks(options: GenerateOptions, run_post_init: bool = False) -> CallbackList:
     """Get a list of default callbacks.
 
     :param options: Global generate options
@@ -47,7 +50,7 @@ def default_callbacks(options: GenerateOptions, run_post_init: bool = True) -> C
     return cb_list
 
 
-def callback_list_from_config(configs: list[CallbackConfig], options: GenerateOptions, run_post_init: bool = True):
+def callback_list_from_config(configs: list[CallbackConfig], options: GenerateOptions, run_post_init: bool = False):
     """Create a callback list from a list of callback configurations
 
     :param configs: List of callback configs
@@ -68,9 +71,7 @@ def callbacks_from_options(options: GenerateOptions, post_init_kwargs: dict | No
     :return: Callback list
     """
     callbacks = (
-        callback_list_from_config(options.callbacks, options, run_post_init=False)
-        if options.callbacks
-        else default_callbacks(options, run_post_init=False)
+        callback_list_from_config(options.callbacks, options) if options.callbacks else default_callbacks(options)
     )
     if options.extra_callbacks:
         callbacks.extend(callback_list_from_config(options.extra_callbacks, options), mode="replace")

@@ -7,3 +7,6 @@ dno:
   lr: 5e-2 # Default
 extra_callbacks:
   - name: profiler
+  - name: generate_video
+    args:
+      every_n_steps: 5
