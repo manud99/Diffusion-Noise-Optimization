@@ -61,7 +61,7 @@ def callback_list_from_config(configs: list[CallbackConfig], options: GenerateOp
     return cb_list
 
 
-def callbacks_from_options(options: GenerateOptions):
+def callbacks_from_options(options: GenerateOptions, post_init_kwargs: dict | None = None):
     """Instantiate all callbacks using `callbacks` (if present), else default callbacks, and merging with `extra_callbacks`.
 
     :param options: Global generate options
@@ -74,5 +74,5 @@ def callbacks_from_options(options: GenerateOptions):
     )
     if options.extra_callbacks:
         callbacks.extend(callback_list_from_config(options.extra_callbacks, options), mode="replace")
-    callbacks.post_init()
+    callbacks.post_init(**(post_init_kwargs or {}))
     return callbacks

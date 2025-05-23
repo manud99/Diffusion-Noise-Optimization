@@ -22,6 +22,21 @@ def _terminal_width(fallback: int = 80):
         return fallback
 
 
+# Invoke function only with kwargs that are actually accepted by the function. This way, callbacks can choose
+# what kwargs to accept.
+def _invoke_with_kwargs(func, kwargs, args: list | None = None):
+    """Invokes the given function with only the arguments from `kwargs` that the function actually accepts.
+
+    :param func: Function to invoke
+    :param kwargs: All keyword arguments
+    :param args: Positional arguments to pass to function. Note that these are not checked and passed as-is.
+    :return: Function return value
+    """
+    sig = inspect.signature(func)
+    accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
+    return func(*(args or []), **accepted)
+
+
 @dataclass
 class CallbackStepAction:
     stop: bool = field(default=False, metadata={"help": "Set to True to stop optimization after the current step"})
@@ -70,24 +85,17 @@ class Callback(ABC):
     def invoke(
         self, callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], **kwargs
     ) -> CallbackStepAction | None:
-        # Invoke function only with kwargs that are actually accepted by the function. This way, callbacks can choose
-        # what kwargs to accept.
-        def invoke_with_kwargs(func, kwargs):
-            sig = inspect.signature(func)
-            accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
-            return func(**accepted)
-
         match callback_stage:
             case "train_begin":
-                return invoke_with_kwargs(self.on_train_begin, kwargs)
+                return _invoke_with_kwargs(self.on_train_begin, kwargs)
             case "train_end":
-                return invoke_with_kwargs(self.on_train_end, kwargs)
+                return _invoke_with_kwargs(self.on_train_end, kwargs)
             case "step_begin":
                 if self._should_run_step_callback():
-                    return invoke_with_kwargs(self.on_step_begin, kwargs)
+                    return _invoke_with_kwargs(self.on_step_begin, kwargs)
             case "step_end":
                 if self._should_run_step_callback():
-                    return invoke_with_kwargs(self.on_step_end, kwargs)
+                    return _invoke_with_kwargs(self.on_step_end, kwargs)
         return None
 
     @classmethod
@@ -203,6 +211,6 @@ class CallbackList(list[Callback]):
         else:
             raise ValueError(mode)
 
-    def post_init(self):
+    def post_init(self, **kwargs):
         for cb in self:
-            cb.__post_init__(self)
+            _invoke_with_kwargs(cb.__post_init__, kwargs, args=[self])
