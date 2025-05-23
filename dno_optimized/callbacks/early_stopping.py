@@ -24,7 +24,7 @@ class EarlyStoppingCallback(Callback):
         self.min_improvement = min_improvement
         self.mode = mode
         self.metric = metric
-        self.abs_value = abs_value
+        self.abs_value = float(abs_value) if abs_value is not None else None
 
         # State
         self._best_value: float = float("inf") if mode == "min" else float("-inf")
@@ -39,8 +39,6 @@ class EarlyStoppingCallback(Callback):
             mode=config.get("mode", "min"),
             metric=config.get("metric", "loss"),
             abs_value=config.get("abs_value"),
-            every_n_steps=config.get("every_n_steps"),
-            start_after=config.get("start_after"),
         )
 
     @override

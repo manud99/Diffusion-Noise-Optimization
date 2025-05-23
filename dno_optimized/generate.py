@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from torch.utils.tensorboard.writer import SummaryWriter
+from tqdm import tqdm
 
 from data_loaders.get_data import DatasetConfig, get_dataset_loader
 from data_loaders.humanml.utils.paramUtil import t2m_kinematic_chain
@@ -26,10 +26,10 @@ from utils.fixseed import fixseed
 from utils.model_util import create_gaussian_diffusion, create_model_and_diffusion, load_model_wo_clip
 from utils.output_util import construct_template_variables, sample_to_motion, save_multiple_samples
 
-from .noise_optimizer import DNO, DNOOptions
+from .noise_optimizer import DNO, DNOOptions, DNOStateDict
 
 
-def main(config_file: str, dot_list=None):
+def generate(config_file: str, dot_list=None):
     if dot_list is None:
         dot_list = []
     # Create structured base config
@@ -51,31 +51,15 @@ def main(config_file: str, dot_list=None):
     fixseed(args.seed)
     setup_dist(args.device)
 
-    data, diffusion, model, model_device, model_kwargs, target = prepare_dataset_and_model(args)
+    model_device = dist_util.dev()
+    data, diffusion, model, model_kwargs, _ = prepare_dataset_and_model(args, device=model_device)
 
-    all_motions = []
-    all_lengths = []
-    all_text = []
-    obs_list = []
-    kframes = []
-    show_target_pose = False
+    show_target_pose = args.task == "motion_inbetweening"
 
     assert args.num_repetitions == 1, "More repetitions are not yet implemented"
     # start for rep_i in range(args.num_repetitions):
-    (
-        start_from_noise,
-        gen_sample,
-        inv_noise,
-        kframes,
-        noise_opt_conf,
-        obs_list,
-        sample,
-        sample_2,
-        show_target_pose,
-        target,
-        target_mask,
-    ) = prepare_optimization(
-        args, data, diffusion, kframes, model, model_device, model_kwargs, obs_list, show_target_pose, target
+    (start_from_noise, gen_sample, inv_noise, kframes, obs_list, sample, sample_2, target, target_mask) = (
+        prepare_optimization(args, data, diffusion, model, model_device, model_kwargs)
     )
 
     #######################################
@@ -84,7 +68,7 @@ def main(config_file: str, dot_list=None):
     #######################################
     #######################################
 
-    opt_step = noise_opt_conf.num_opt_steps
+    opt_step = args.dno.num_opt_steps
     inter_out = []
     step_out_list = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.95]
     step_out_list = [int(aa * opt_step) for aa in step_out_list]
@@ -105,8 +89,8 @@ def main(config_file: str, dot_list=None):
     loss_fn = CondKeyLocationsLoss(
         target=target,
         target_mask=target_mask,
-        transform=data.dataset.t2m_dataset.transform_th,
-        inv_transform=data.dataset.t2m_dataset.inv_transform_th,
+        transform=data.dataset.t2m_dataset.transform_th,  # type: ignore
+        inv_transform=data.dataset.t2m_dataset.inv_transform_th,  # type: ignore
         abs_3d=False,
         use_mse_loss=False,
         use_rand_projection=False,
@@ -127,10 +111,77 @@ def main(config_file: str, dot_list=None):
             gradient_checkpoint=args.gradient_checkpoint,
         )
 
-    callbacks = callbacks_from_options(args)
+    #
+    # Function to process results and save to numpy and generate videos. This is used in:
+    #
+    # - Save video callbacks
+    # - Final result generation
+    #
+    def process_and_save(
+        out,
+        save: bool = True,
+        plots: bool = True,
+        videos: bool = True,
+        out_dir: str | None = None,
+        step: int | None = None,
+        verbose: bool = False,
+    ):
+        """Processes optimized output with various actions
+
+        :param out: DNO output
+        :param save: Save results to numpy file, defaults to True
+        :param plots: Plot results to matplotlib and save, defaults to True
+        :param videos: Generate and save videos, defaults to True
+        :param out_dir: Output directory, defaults to args.out_path
+        :param step: Current optimization step, or None if end of optimization
+        :param verbose: Verbose output
+        """
+        out_dir = out_dir or str(args.out_path)
+        captions, all_lengths, all_motions, all_texts, num_dump_step = process_results(
+            args,
+            data,
+            gen_sample,
+            inter_out,
+            model,
+            model_kwargs,
+            out,
+            sample,
+            sample_2,
+            step_out_list,
+            target,
+            out["stop_optimize"],
+        )
+
+        if plots:
+            save_plots(out, args.num_trials, out_dir, verbose=verbose)
+
+        if save:
+            save_results(out, all_motions, all_texts, all_lengths, args, out_dir=out_dir, verbose=verbose)
+
+        if videos:
+            save_videos(
+                all_lengths,
+                all_motions,
+                all_texts,
+                args,
+                captions,
+                kframes,
+                num_dump_step,
+                obs_list,
+                show_target_pose,
+                target,
+                out_dir=out_dir,
+                on_step=step,
+                verbose=verbose,
+            )
+
+    # Slightly janky, but we pass `process_and_save` to callbacks post-init, so that callbacks like GenerateVideo can
+    # use this function to save videos. Should be refactored once the code in this main file has been modularized and
+    # cleaned up.
+    callbacks = callbacks_from_options(args, post_init_kwargs=dict(process_fn=process_and_save))
 
     ######## Main optimization loop #######
-    noise_opt = DNO(model=solver, criterion=criterion, start_z=cur_xt, conf=noise_opt_conf, callbacks=callbacks)
+    noise_opt = DNO(model=solver, criterion=criterion, start_z=cur_xt, conf=args.dno, callbacks=callbacks)
     out = noise_opt()
     #######################################
 
@@ -138,29 +189,7 @@ def main(config_file: str, dot_list=None):
     if topk := callbacks.get(SaveTopKCallback):
         out = topk.best_models[0].state_dict
 
-    captions, cur_lengths, cur_motions, cur_texts, num_dump_step = process_results(
-        args,
-        data,
-        gen_sample,
-        inter_out,
-        model,
-        model_kwargs,
-        out,
-        sample,
-        sample_2,
-        step_out_list,
-        target,
-        out["stop_optimize"],
-    )
-
-    all_motions.extend(cur_motions)
-    all_lengths.extend(cur_lengths)
-    all_text.extend(cur_texts)
-    # end for rep_i in range(args.num_repetitions):
-
-    save_videos(
-        all_lengths, all_motions, all_text, args, captions, kframes, num_dump_step, obs_list, show_target_pose, target
-    )
+    process_and_save(out, save=True, plots=True, videos=True)
 
 
 def load_dataset(args, n_frames):
@@ -175,11 +204,14 @@ def load_dataset(args, n_frames):
         num_workers=args.dataloader_num_workers,
     )
     data = get_dataset_loader(conf)
-    data.fixed_length = n_frames
+    data.fixed_length = n_frames  # type: ignore
     return data
 
 
-def prepare_dataset_and_model(args):
+DeviceLikeType = str | torch.device | int
+
+
+def prepare_dataset_and_model(args, device: DeviceLikeType | None = None):
     print("Loading dataset...")
     data = load_dataset(args, args.n_frames)
 
@@ -194,9 +226,8 @@ def prepare_dataset_and_model(args):
     load_model_wo_clip(model, state_dict)
     if args.guidance_param != 1:
         model = ClassifierFreeSampleModel(model)  # wrapping model with the classifier-free sampler
-    model.to(dist_util.dev())
+    model.to(device)
     model.eval()  # disable random masking
-    model_device = next(model.parameters()).device
     ###################################
 
     collate_args = [
@@ -210,13 +241,13 @@ def prepare_dataset_and_model(args):
 
     ### Name for logging #######################
     model_kwargs["y"]["log_name"] = args.out_path
-    model_kwargs["y"]["traj_model"] = False
+    model_kwargs["y"]["traj_model"] = False  # type: ignore
     #############################################
 
     ### Prepare target for task ################
     gen_batch_size = 1
     args.gen_batch_size = gen_batch_size
-    target = torch.zeros([gen_batch_size, args.max_frames, 22, 3], device=model_device)
+    target = torch.zeros([gen_batch_size, args.max_frames, 22, 3], device=device)
     ############################################
 
     # Output path
@@ -226,20 +257,16 @@ def prepare_dataset_and_model(args):
     OmegaConf.save(config=args, f=args.out_path / "args.yml")
     ############################################
 
-    return data, diffusion, model, model_device, model_kwargs, target
+    return data, diffusion, model, model_kwargs, target
 
 
 def prepare_optimization(
     args: GenerateOptions,
     data,
     diffusion,
-    kframes,
     model,
     model_device,
     model_kwargs,
-    obs_list,
-    show_target_pose,
-    target,
 ):
     sample_2 = None
     if args.load_from == "":
@@ -284,6 +311,7 @@ def prepare_optimization(
     }
 
     if args.task == "motion_blending":
+        assert sample_2 is not None
         NUM_OFFSET = 20
         # No target around the seam
         # SEAM_WIDTH = 10  # 15 # 10 # 5 # 3
@@ -329,9 +357,6 @@ def prepare_optimization(
     noise_opt_conf: DNOOptions = args.dno
     noise_opt_conf.diff_penalty_scale = 2e-3 if is_editing_task else 0
     start_from_noise = is_noise_init
-
-    if args.task == "motion_inbetweening":
-        show_target_pose = True
 
     # Repeat target to match num_trials
     if target.shape[0] == 1:
@@ -392,11 +417,9 @@ def prepare_optimization(
         gen_sample,
         inv_noise,
         kframes,
-        noise_opt_conf,
         obs_list,
         sample,
         sample_2,
-        show_target_pose,
         target,
         target_mask,
     )
@@ -422,40 +445,12 @@ def process_results(
     step_out_list[-1] = stop_optimize - 1
 
     for t in step_out_list:
-        print("save optimize at", t)
-
         # aggregate the batch
         inter_step = []
         for i in range(args.num_trials):
             inter_step.append(out["hist"][i]["x"][t])
         inter_step = torch.stack(inter_step, dim=0)
         inter_out.append(inter_step)
-
-    for i in range(args.num_trials):
-        hist = out["hist"][i]
-        # Plot loss
-        for key in [
-            "loss",
-            "loss_diff",
-            "loss_decorrelate",
-            "grad_norm",
-            "lr",
-            "perturb_scale",
-            "diff_norm",
-        ]:
-            plt.figure()
-            if key in ["loss", "loss_diff", "loss_decorrelate"]:
-                plt.semilogy(hist["step"], hist[key])
-                # plt.ylim(top=0.4)
-                # Plot horizontal red line at lowest point of loss function
-                min_loss = min(hist[key])
-                plt.axhline(y=min_loss, color="r")
-                plt.text(0, min_loss, f"Min Loss: {min_loss:.4f}", color="r")
-            else:
-                plt.plot(hist["step"], hist[key])
-            plt.legend([key])
-            plt.savefig(os.path.join(args.out_path, f"trial_{i}_{key}.png"))
-            plt.close()
 
     final_out = out["x"].detach().clone()
 
@@ -475,9 +470,6 @@ def process_results(
             "Original",
         ] + [f"Prediction {i + 1}" for i in range(args.num_trials)]
         args.num_samples = 1 + args.num_trials
-
-    torch.save(out["z"], os.path.join(args.out_path, "optimized_z.pt"))
-    torch.save(out["x"], os.path.join(args.out_path, "optimized_x.pt"))
 
     ###################
     num_dump_step = 1
@@ -508,7 +500,72 @@ def process_results(
         ] + [f"Prediction {i + 1}" for i in range(args.num_trials)]
         args.num_samples = 2 + args.num_trials
 
-    return captions, cur_lengths, cur_motions, cur_texts, num_dump_step
+    total_num_samples = args.num_samples * args.num_repetitions * num_dump_step
+
+    # After concat -> [r1_dstep_1, r2_dstep_1, r3_dstep_1, r1_dstep_2, r2_dstep_2, ....]
+    all_motions = np.concatenate(cur_motions, axis=0)  # [bs * num_dump_step, 1, 3, 120]
+    all_motions = all_motions[:total_num_samples]  # [bs, njoints, 3, seqlen]
+    all_text = cur_texts[:total_num_samples]  # len() = args.num_samples * num_dump_step
+    all_lengths = np.concatenate(cur_lengths, axis=0)[:total_num_samples]
+
+    return captions, all_lengths, all_motions, all_text, num_dump_step
+
+
+def save_plots(out: DNOStateDict, num_trials: int, out_dir: str, verbose: bool = False):
+    if verbose:
+        print(f"Saving plots to [{out_dir}/*]")
+
+    for i in range(num_trials):
+        hist = out["hist"][i]
+        # Plot loss
+        for key in [
+            "loss",
+            "loss_diff",
+            "loss_decorrelate",
+            "grad_norm",
+            "lr",
+            "perturb_scale",
+            "diff_norm",
+        ]:
+            plt.figure()
+            if key in ["loss", "loss_diff", "loss_decorrelate"]:
+                plt.semilogy(hist["step"], hist[key])
+                # plt.ylim(top=0.4)
+                # Plot horizontal red line at lowest point of loss function
+                min_loss = min(hist[key])
+                plt.axhline(y=min_loss, color="r")
+                plt.text(0, min_loss, f"Min Loss: {min_loss:.4f}", color="r")
+            else:
+                plt.plot(hist["step"], hist[key])
+            plt.legend([key])
+            plt.savefig(os.path.join(out_dir, f"trial_{i}_{key}.png"))
+            plt.close()
+
+
+def save_results(out: DNOStateDict, all_motions, all_text, all_lengths, args, out_dir: str, verbose: bool = False):
+    torch.save(out["z"], os.path.join(out_dir, "optimized_z.pt"))
+    torch.save(out["x"], os.path.join(out_dir, "optimized_x.pt"))
+
+    npy_path = os.path.join(out_dir, "results.npy")
+
+    if verbose:
+        print(f"Saving results file to [{npy_path}]")
+
+    np.save(
+        npy_path,
+        {
+            "motion": all_motions,
+            "text": all_text,
+            "lengths": all_lengths,
+            "num_samples": args.num_samples,
+            "num_repetitions": args.num_repetitions,
+        },  # type: ignore
+    )
+
+    with open(npy_path.replace(".npy", ".txt"), "w") as fw:
+        fw.write("\n".join(all_text))
+    with open(npy_path.replace(".npy", "_len.txt"), "w") as fw:
+        fw.write("\n".join([str(length) for length in all_lengths]))
 
 
 def save_videos(
@@ -522,36 +579,12 @@ def save_videos(
     obs_list,
     show_target_pose,
     target,
-    tb_writer: SummaryWriter | None = None,
+    out_dir: str,
+    on_step: int | None = None,
+    verbose: bool = False,
 ):
-    total_num_samples = args.num_samples * args.num_repetitions * num_dump_step
-
-    # After concat -> [r1_dstep_1, r2_dstep_1, r3_dstep_1, r1_dstep_2, r2_dstep_2, ....]
-    all_motions = np.concatenate(all_motions, axis=0)  # [bs * num_dump_step, 1, 3, 120]
-    all_motions = all_motions[:total_num_samples]  # [bs, njoints, 3, seqlen]
-    all_text = all_text[:total_num_samples]  # len() = args.num_samples * num_dump_step
-    all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
-
-    npy_path = os.path.join(args.out_path, "results.npy")
-
-    print(f"saving results file to [{npy_path}]")
-    np.save(
-        npy_path,
-        {
-            "motion": all_motions,
-            "text": all_text,
-            "lengths": all_lengths,
-            "num_samples": args.num_samples,
-            "num_repetitions": args.num_repetitions,
-        },
-    )
-
-    with open(npy_path.replace(".npy", ".txt"), "w") as fw:
-        fw.write("\n".join(all_text))
-    with open(npy_path.replace(".npy", "_len.txt"), "w") as fw:
-        fw.write("\n".join([str(length) for length in all_lengths]))
-
-    print(f"saving visualizations to [{args.out_path}]...")
+    if verbose:
+        print(f"Saving visualizations to [{out_dir}/*]...")
 
     sample_files = []
     num_samples_in_out_file = num_dump_step
@@ -562,18 +595,21 @@ def save_videos(
         sample_file_template,
         row_file_template,
         all_file_template,
-    ) = construct_template_variables(args.unconstrained)
+    ) = construct_template_variables(args.unconstrained, step=on_step)
 
+    pb = None
+    if verbose:
+        pb = tqdm(total=args.num_samples, ncols=0, dynamic_ncols=False, desc="Saving videos")
     for sample_i in range(args.num_samples):
         rep_files = []
 
-        print("saving", sample_i)
         caption = all_text[sample_i]
         length = all_lengths[sample_i]
         motion = all_motions[sample_i].transpose(2, 0, 1)[:length]
-        save_file = sample_file_template.format(0, sample_i)
-        print(sample_print_template.format(caption, 0, sample_i, save_file))
-        animation_save_path = os.path.join(args.out_path, save_file)
+        save_file = sample_file_template.format(*(([on_step] if on_step else []) + [0, sample_i]))
+        if pb is not None:
+            pb.write(sample_print_template.format(caption, 0, sample_i, save_file))
+        animation_save_path = os.path.join(out_dir, save_file)
         plot_3d_motion(
             animation_save_path,
             t2m_kinematic_chain,
@@ -591,7 +627,7 @@ def save_videos(
         # Check if we need to stack video
         sample_files = save_multiple_samples(
             args,
-            args.out_path,
+            out_dir,
             row_print_template,
             all_print_template,
             row_file_template,
@@ -601,13 +637,20 @@ def save_videos(
             rep_files,
             sample_files,
             sample_i,
+            on_step=on_step,
+            verbose=verbose,
+            delete_originals=True,
         )
 
-    abs_path = os.path.abspath(args.out_path)
-    print(f"[Done] Results are at [{abs_path}]")
+        if pb is not None:
+            pb.update(1)
+
+    abs_path = os.path.abspath(out_dir)
+    if verbose:
+        print(f"[Done] Results are at [{abs_path}]")
 
 
-if __name__ == "__main__":
+def main():
     parser = ArgumentParser(
         prog="python -m dno_optimized.generate",
         description="Edit a new motion that was generated by a text-to-motion model.",
@@ -616,7 +659,12 @@ if __name__ == "__main__":
     parser.add_argument("dotlist", nargs="*", help="A dotlist of arguments parsed by omegaconf.")
     args = parser.parse_args()
     try:
-        main(args.config_file, args.dotlist)
+        generate(args.config_file, args.dotlist)
     except KeyboardInterrupt:
         print("Aborted.", file=sys.stderr)
         sys.exit(1)
+
+
+# Use separate main function to avoid polluting global scope with variables
+if __name__ == "__main__":
+    main()
