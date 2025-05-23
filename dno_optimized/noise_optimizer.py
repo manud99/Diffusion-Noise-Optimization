@@ -53,6 +53,7 @@ class DNOInfoDict(TypedDict):
     perturb_scale: list[float]
     # Batched tensor values
     loss: torch.Tensor
+    loss_objective: torch.Tensor
     loss_diff: torch.Tensor
     loss_decorrelate: torch.Tensor
     grad_norm: torch.Tensor
@@ -74,6 +75,7 @@ def default_info() -> DNOInfoDict:
         "lr": [],
         "perturb_scale": [],
         "loss": torch.empty([]),
+        "loss_objective": torch.empty([]),
         "loss_diff": torch.empty([]),
         "loss_decorrelate": torch.empty([]),
         "grad_norm": torch.empty([]),
@@ -152,43 +154,47 @@ class DNO:
 
         batch_size = self.start_z.shape[0]
 
-        self.step_count = 1
+        self.step_count = 0
         self.callbacks.invoke(self, "train_begin", num_steps=num_steps, batch_size=batch_size)
 
         pb = tqdm(total=num_steps)
+        x: torch.Tensor = torch.empty([])  # Will be initialized in training loop
         for i in range(num_steps):
+            self.step_count += 1
 
             def closure():
+                nonlocal x
                 # Reset gradients
                 self.optimizer.zero_grad()
+                # Compute output based on current noise
+                x = self.model(self.current_z)
                 # Single step forward and backward
-                self.last_x, loss = self.compute_loss(batch_size=batch_size)
+                loss = self.compute_loss(x, batch_size=batch_size)
                 return loss.item()
 
             # Pre-step callbacks
-            res = self.callbacks.invoke(self, "step_begin", pb=pb, step=i)
+            res = self.callbacks.invoke(self, "step_begin", pb=pb, step=self.step_count)
             if res.stop:
                 break
 
             # Step optimization and add noise after optimization step
             self.optimizer.step(closure)
+            self.last_x = x
             self.lr_frac = self.step_schedulers(batch_size=batch_size)
             self.noise_perturbation(self.lr_frac, batch_size=batch_size)
 
-            self.update_metrics(self.last_x)
+            self.update_metrics(x)
+
+            # Post-step callbacks
+            res = self.callbacks.invoke(self, "step_end", pb=pb, step=self.step_count, info=self.info, hist=self.hist)
+            if res.stop:
+                break
 
             pb.set_postfix({"loss": self.info["loss"].mean().item()})
             pb.update(1)
 
-            # Post-step callbacks
-            res = self.callbacks.invoke(self, "step_end", pb=pb, step=i, info=self.info, hist=self.hist)
-            if res.stop:
-                break
-
-            self.step_count += 1
-
         # Check for early stopping
-        if self.step_count != num_steps:
+        if self.step_count < num_steps:
             print(f"INFO: Stopping optimization early at step {self.step_count}/{num_steps}")
 
         hist = self.compute_hist(batch_size=batch_size)
@@ -229,16 +235,15 @@ class DNO:
         for i, param_group in enumerate(self.optimizer.param_groups):
             param_group["lr"] = lr
 
-    def compute_loss(self, batch_size):
+    def compute_loss(self, x: torch.Tensor, batch_size: int) -> torch.Tensor:
         self.info = default_info()
         self.info["step"] = [self.step_count] * batch_size
 
-        # criterion
-        x = self.model(self.current_z)
         # [batch_size,]
         loss = self.criterion(x)
         assert loss.shape == (batch_size,)
-        self.info["loss"] = loss.detach().cpu()
+        # Clone necessary if already on CPU since we modify loss in-place
+        self.info["loss_objective"] = loss.detach().cpu().clone()
         loss = loss.sum()
 
         # diff penalty
@@ -263,6 +268,8 @@ class DNO:
         else:
             self.info["loss_decorrelate"] = torch.tensor([0] * batch_size, device="cpu")
 
+        self.info["loss"] = loss.detach().cpu().clone().repeat(batch_size)
+
         # backward
         loss.backward()
 
@@ -278,7 +285,7 @@ class DNO:
         if self.conf.gradient_clip_val is not None:
             torch.nn.utils.clip_grad_norm_(self.current_z, self.conf.gradient_clip_val, norm_type=2)
 
-        return x, loss
+        return loss
 
     def noise_perturbation(self, lr_frac, batch_size):
         # noise perturbation

@@ -6,7 +6,7 @@ dno:
   optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
   lr: 5e-2 # Default
   normalize_gradient: false
-  gradient_clip_val: 0.5
+  gradient_clip_val: 0.2
 extra_callbacks:
   - name: early_stopping
     args:

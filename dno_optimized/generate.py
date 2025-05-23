@@ -189,7 +189,7 @@ def generate(config_file: str, dot_list=None):
     if topk := callbacks.get(SaveTopKCallback):
         out = topk.best_models[0].state_dict
 
-    process_and_save(out, save=True, plots=True, videos=True)
+    process_and_save(out, save=True, plots=True, videos=True, verbose=True)
 
 
 def load_dataset(args, n_frames):
