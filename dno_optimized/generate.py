@@ -595,9 +595,9 @@ def save_videos(
         sample_file_template,
         row_file_template,
         all_file_template,
-    ) = construct_template_variables(args.unconstrained)
+    ) = construct_template_variables(args.unconstrained, step=on_step)
 
-    for sample_i in tqdm(range(args.num_samples), ncols=0, dynamic_ncols=False, desc="Saving videos"):
+    for sample_i in (pb := tqdm(range(args.num_samples), ncols=0, dynamic_ncols=False, desc="Saving videos")):
         rep_files = []
 
         caption = all_text[sample_i]
@@ -605,7 +605,7 @@ def save_videos(
         motion = all_motions[sample_i].transpose(2, 0, 1)[:length]
         save_file = sample_file_template.format(*(([on_step] if on_step else []) + [0, sample_i]))
         if verbose:
-            print(sample_print_template.format(caption, 0, sample_i, save_file))
+            pb.write(sample_print_template.format(caption, 0, sample_i, save_file))
         animation_save_path = os.path.join(out_dir, save_file)
         plot_3d_motion(
             animation_save_path,
@@ -634,6 +634,7 @@ def save_videos(
             rep_files,
             sample_files,
             sample_i,
+            on_step=on_step
         )
 
     abs_path = os.path.abspath(out_dir)
