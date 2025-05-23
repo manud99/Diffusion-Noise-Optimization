@@ -597,7 +597,10 @@ def save_videos(
         all_file_template,
     ) = construct_template_variables(args.unconstrained, step=on_step)
 
-    for sample_i in (pb := tqdm(range(args.num_samples), ncols=0, dynamic_ncols=False, desc="Saving videos")):
+    pb = None
+    if verbose:
+        pb = tqdm(total=args.num_samples, ncols=0, dynamic_ncols=False, desc="Saving videos")
+    for sample_i in range(args.num_samples):
         rep_files = []
 
         caption = all_text[sample_i]
@@ -636,8 +639,11 @@ def save_videos(
             sample_i,
             on_step=on_step,
             verbose=verbose,
-            delete_originals=True
+            delete_originals=True,
         )
+
+        if pb is not None:
+            pb.update(1)
 
     abs_path = os.path.abspath(out_dir)
     if verbose:

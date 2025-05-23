@@ -152,12 +152,11 @@ class DNO:
 
         batch_size = self.start_z.shape[0]
 
-        self.step_count = 0
+        self.step_count = 1
         self.callbacks.invoke(self, "train_begin", num_steps=num_steps, batch_size=batch_size)
 
         pb = tqdm(total=num_steps)
         for i in range(num_steps):
-            assert self.step_count == i
 
             def closure():
                 # Reset gradients
@@ -189,7 +188,7 @@ class DNO:
             self.step_count += 1
 
         # Check for early stopping
-        if self.step_count != num_steps - 1:
+        if self.step_count != num_steps:
             print(f"INFO: Stopping optimization early at step {self.step_count}/{num_steps}")
 
         hist = self.compute_hist(batch_size=batch_size)
