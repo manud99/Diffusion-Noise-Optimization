@@ -6,7 +6,7 @@ from data_loaders.humanml.scripts.motion_process import recover_from_ric
 
 
 def sample_to_motion(sample_list, args, model_kwargs, model, n_frames,
-                     data_inv_transform_fn):
+                     data_inv_transform_fn, verbose=False):
 
     if not isinstance(sample_list, list):
         sample_list = [sample_list]
@@ -61,7 +61,8 @@ def sample_to_motion(sample_list, args, model_kwargs, model, n_frames,
             all_lengths.append(model_kwargs['y']['lengths'].cpu().numpy().repeat(
             args.num_repetitions))
 
-        print(f"created {len(all_motions) * args.batch_size} samples")
+        if verbose:
+            print(f"created {len(all_motions) * args.batch_size} samples")
 
     return all_motions, all_lengths, all_text
 
@@ -89,7 +90,8 @@ def construct_template_variables(unconstrained, step: int | None = None):
 def save_multiple_samples(args, out_path, row_print_template,
                           all_print_template, row_file_template,
                           all_file_template, caption, num_samples_in_out_file,
-                          rep_files, sample_files, sample_i, on_step):
+                          rep_files, sample_files, sample_i, on_step=None,
+                          verbose=False, delete_originals=False):
 
     sample_files.append(rep_files[0])
 
@@ -100,15 +102,19 @@ def save_multiple_samples(args, out_path, row_print_template,
         all_sample_save_file = all_file_template.format(
             *(([on_step] if on_step is not None else []) + [sample_i - len(sample_files) + 1, sample_i]))
         all_sample_save_path = os.path.join(out_path, all_sample_save_file)
-        print(
-            all_print_template.format(sample_i - len(sample_files) + 1,
-                                      sample_i, all_sample_save_file))
+        if verbose:
+            print(
+                all_print_template.format(sample_i - len(sample_files) + 1,
+                                        sample_i, all_sample_save_file))
         ffmpeg_rep_files = [f' -i {f} ' for f in sample_files]
         vstack_args = f' -filter_complex hstack=inputs={len(sample_files)}' if len(
             sample_files) > 1 else ''
         ffmpeg_rep_cmd = 'ffmpeg -y -loglevel warning ' + ''.join(
             ffmpeg_rep_files) + f'{vstack_args} {all_sample_save_path}'
         os.system(ffmpeg_rep_cmd)
+        if delete_originals:
+            for file in sample_files:
+                os.unlink(file)
         sample_files = []
     return sample_files
 

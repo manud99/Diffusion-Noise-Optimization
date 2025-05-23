@@ -24,7 +24,7 @@ class EarlyStoppingCallback(Callback):
         self.min_improvement = min_improvement
         self.mode = mode
         self.metric = metric
-        self.abs_value = abs_value
+        self.abs_value = float(abs_value) if abs_value is not None else None
 
         # State
         self._best_value: float = float("inf") if mode == "min" else float("-inf")

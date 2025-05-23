@@ -444,7 +444,7 @@ def process_results(
     step_out_list = [int(aa * stop_optimize) for aa in step_out_list]
     step_out_list[-1] = stop_optimize - 1
 
-    for t in tqdm(step_out_list, ncols=0, dynamic_ncols=False, desc="Saving results"):
+    for t in step_out_list:
         # aggregate the batch
         inter_step = []
         for i in range(args.num_trials):
@@ -634,7 +634,9 @@ def save_videos(
             rep_files,
             sample_files,
             sample_i,
-            on_step=on_step
+            on_step=on_step,
+            verbose=verbose,
+            delete_originals=True
         )
 
     abs_path = os.path.abspath(out_dir)

@@ -6,7 +6,12 @@ dno:
   optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
   lr: 5e-2 # Default
 extra_callbacks:
+  # - name: early_stopping
+  #   args:
+  #     patience: 200
+  #     min_improvement: 0
+  #     abs_value: 5e-5
   - name: profiler
   - name: generate_video
     args:
-      every_n_steps: 50
+      every_n_steps: 10
