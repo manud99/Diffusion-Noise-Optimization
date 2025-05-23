@@ -92,7 +92,7 @@ class DNO:
     def __init__(
         self,
         model,
-        criterion: Callable[[Tensor], float],
+        criterion: Callable[[Tensor], Tensor],
         start_z: Tensor,
         conf: DNOOptions,
         callbacks: "CallbackList | None" = None,
@@ -165,7 +165,7 @@ class DNO:
                 self.optimizer.zero_grad()
                 # Single step forward and backward
                 self.last_x, loss = self.compute_loss(batch_size=batch_size)
-                return loss
+                return loss.item()
 
             # Pre-step callbacks
             res = self.callbacks.invoke(self, "step_begin", pb=pb, step=i)
@@ -268,6 +268,7 @@ class DNO:
         loss.backward()
 
         # log grad norm (before)
+        assert self.current_z.grad is not None
         self.info["grad_norm"] = self.current_z.grad.norm(p=2, dim=self.dims).detach().cpu()
 
         # grad mode

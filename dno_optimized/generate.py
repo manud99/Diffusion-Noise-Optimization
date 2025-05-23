@@ -52,28 +52,15 @@ def main(config_file: str, dot_list=None):
     fixseed(args.seed)
     setup_dist(args.device)
 
-    data, diffusion, model, model_device, model_kwargs, target = prepare_dataset_and_model(args)
+    model_device = dist_util.dev()
+    data, diffusion, model, model_kwargs, _ = prepare_dataset_and_model(args, device=model_device)
 
-    obs_list = []
-    kframes = []
-    show_target_pose = False
+    show_target_pose = args.task == "motion_inbetweening"
 
     assert args.num_repetitions == 1, "More repetitions are not yet implemented"
     # start for rep_i in range(args.num_repetitions):
-    (
-        start_from_noise,
-        gen_sample,
-        inv_noise,
-        kframes,
-        noise_opt_conf,
-        obs_list,
-        sample,
-        sample_2,
-        show_target_pose,
-        target,
-        target_mask,
-    ) = prepare_optimization(
-        args, data, diffusion, kframes, model, model_device, model_kwargs, obs_list, show_target_pose, target
+    (start_from_noise, gen_sample, inv_noise, kframes, obs_list, sample, sample_2, target, target_mask) = (
+        prepare_optimization(args, data, diffusion, model, model_device, model_kwargs)
     )
 
     #######################################
@@ -82,7 +69,7 @@ def main(config_file: str, dot_list=None):
     #######################################
     #######################################
 
-    opt_step = noise_opt_conf.num_opt_steps
+    opt_step = args.dno.num_opt_steps
     inter_out = []
     step_out_list = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.95]
     step_out_list = [int(aa * opt_step) for aa in step_out_list]
@@ -103,8 +90,8 @@ def main(config_file: str, dot_list=None):
     loss_fn = CondKeyLocationsLoss(
         target=target,
         target_mask=target_mask,
-        transform=data.dataset.t2m_dataset.transform_th,
-        inv_transform=data.dataset.t2m_dataset.inv_transform_th,
+        transform=data.dataset.t2m_dataset.transform_th,  # type: ignore
+        inv_transform=data.dataset.t2m_dataset.inv_transform_th,  # type: ignore
         abs_3d=False,
         use_mse_loss=False,
         use_rand_projection=False,
@@ -125,6 +112,12 @@ def main(config_file: str, dot_list=None):
             gradient_checkpoint=args.gradient_checkpoint,
         )
 
+    # 
+    # Function to process results and save to numpy and generate videos. This is used in:
+    #
+    # - Save video callbacks
+    # - Final result generation
+    #
     def process_and_save(out):
         captions, cur_lengths, cur_motions, cur_texts, num_dump_step = process_results(
             args,
@@ -158,7 +151,7 @@ def main(config_file: str, dot_list=None):
     callbacks = callbacks_from_options(args, post_init_kwargs=dict(process_fn=process_and_save))
 
     ######## Main optimization loop #######
-    noise_opt = DNO(model=solver, criterion=criterion, start_z=cur_xt, conf=noise_opt_conf, callbacks=callbacks)
+    noise_opt = DNO(model=solver, criterion=criterion, start_z=cur_xt, conf=args.dno, callbacks=callbacks)
     out = noise_opt()
     #######################################
 
@@ -181,11 +174,14 @@ def load_dataset(args, n_frames):
         num_workers=args.dataloader_num_workers,
     )
     data = get_dataset_loader(conf)
-    data.fixed_length = n_frames
+    data.fixed_length = n_frames  # type: ignore
     return data
 
 
-def prepare_dataset_and_model(args):
+DeviceLikeType = str | torch.device | int
+
+
+def prepare_dataset_and_model(args, device: DeviceLikeType | None = None):
     print("Loading dataset...")
     data = load_dataset(args, args.n_frames)
 
@@ -200,9 +196,8 @@ def prepare_dataset_and_model(args):
     load_model_wo_clip(model, state_dict)
     if args.guidance_param != 1:
         model = ClassifierFreeSampleModel(model)  # wrapping model with the classifier-free sampler
-    model.to(dist_util.dev())
+    model.to(device)
     model.eval()  # disable random masking
-    model_device = next(model.parameters()).device
     ###################################
 
     collate_args = [
@@ -216,13 +211,13 @@ def prepare_dataset_and_model(args):
 
     ### Name for logging #######################
     model_kwargs["y"]["log_name"] = args.out_path
-    model_kwargs["y"]["traj_model"] = False
+    model_kwargs["y"]["traj_model"] = False  # type: ignore
     #############################################
 
     ### Prepare target for task ################
     gen_batch_size = 1
     args.gen_batch_size = gen_batch_size
-    target = torch.zeros([gen_batch_size, args.max_frames, 22, 3], device=model_device)
+    target = torch.zeros([gen_batch_size, args.max_frames, 22, 3], device=device)
     ############################################
 
     # Output path
@@ -232,20 +227,16 @@ def prepare_dataset_and_model(args):
     OmegaConf.save(config=args, f=args.out_path / "args.yml")
     ############################################
 
-    return data, diffusion, model, model_device, model_kwargs, target
+    return data, diffusion, model, model_kwargs, target
 
 
 def prepare_optimization(
     args: GenerateOptions,
     data,
     diffusion,
-    kframes,
     model,
     model_device,
     model_kwargs,
-    obs_list,
-    show_target_pose,
-    target,
 ):
     sample_2 = None
     if args.load_from == "":
@@ -290,6 +281,7 @@ def prepare_optimization(
     }
 
     if args.task == "motion_blending":
+        assert sample_2 is not None
         NUM_OFFSET = 20
         # No target around the seam
         # SEAM_WIDTH = 10  # 15 # 10 # 5 # 3
@@ -335,9 +327,6 @@ def prepare_optimization(
     noise_opt_conf: DNOOptions = args.dno
     noise_opt_conf.diff_penalty_scale = 2e-3 if is_editing_task else 0
     start_from_noise = is_noise_init
-
-    if args.task == "motion_inbetweening":
-        show_target_pose = True
 
     # Repeat target to match num_trials
     if target.shape[0] == 1:
@@ -398,11 +387,9 @@ def prepare_optimization(
         gen_sample,
         inv_noise,
         kframes,
-        noise_opt_conf,
         obs_list,
         sample,
         sample_2,
-        show_target_pose,
         target,
         target_mask,
     )
@@ -547,7 +534,7 @@ def save_videos(
             "lengths": all_lengths,
             "num_samples": args.num_samples,
             "num_repetitions": args.num_repetitions,
-        },
+        },  # type: ignore
     )
 
     with open(npy_path.replace(".npy", ".txt"), "w") as fw:
