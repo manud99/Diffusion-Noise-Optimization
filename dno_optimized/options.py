@@ -107,6 +107,12 @@ class DNOOptions:
 
     enable_profiler: bool = field(default=False, metadata={"help": "Enable profiler"})
 
+    normalize_gradient: bool = field(default=True, metadata={"help": "Enables gradient normalization during training."})
+    gradient_clip_val: float | None = field(
+        default=None,
+        metadata={"help": "Sets the maximum 2-norm for gradients during optimization. Set to `None` to disable."},
+    )
+
     def __post_init__(self):
         # if lr_decay_steps is not set, then set it to num_opt_steps
         if self.lr_decay_steps == -1:

@@ -271,7 +271,12 @@ class DNO:
         self.info["grad_norm"] = self.current_z.grad.norm(p=2, dim=self.dims).detach().cpu()
 
         # grad mode
-        self.current_z.grad.data /= self.current_z.grad.norm(p=2, dim=self.dims, keepdim=True)
+        if self.conf.normalize_gradient:
+            self.current_z.grad.data /= self.current_z.grad.norm(p=2, dim=self.dims, keepdim=True)
+
+        # Gradient clipping
+        if self.conf.gradient_clip_val is not None:
+            torch.nn.utils.clip_grad_norm_(self.current_z, self.conf.gradient_clip_val, norm_type=2)
 
         return x, loss
 
