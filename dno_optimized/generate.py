@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 from torch.utils.tensorboard.writer import SummaryWriter
+from tqdm import tqdm
 
 from data_loaders.get_data import DatasetConfig, get_dataset_loader
 from data_loaders.humanml.utils.paramUtil import t2m_kinematic_chain
@@ -53,9 +54,6 @@ def main(config_file: str, dot_list=None):
 
     data, diffusion, model, model_device, model_kwargs, target = prepare_dataset_and_model(args)
 
-    all_motions = []
-    all_lengths = []
-    all_text = []
     obs_list = []
     kframes = []
     show_target_pose = False
@@ -127,7 +125,37 @@ def main(config_file: str, dot_list=None):
             gradient_checkpoint=args.gradient_checkpoint,
         )
 
-    callbacks = callbacks_from_options(args)
+    def process_and_save(out):
+        captions, cur_lengths, cur_motions, cur_texts, num_dump_step = process_results(
+            args,
+            data,
+            gen_sample,
+            inter_out,
+            model,
+            model_kwargs,
+            out,
+            sample,
+            sample_2,
+            step_out_list,
+            target,
+            out["stop_optimize"],
+        )
+
+        save_videos(
+            cur_lengths,
+            cur_motions,
+            cur_texts,
+            args,
+            captions,
+            kframes,
+            num_dump_step,
+            obs_list,
+            show_target_pose,
+            target,
+        )
+
+    # Pass process_fn for save video callback (closure including all necessary data)
+    callbacks = callbacks_from_options(args, post_init_kwargs=dict(process_fn=process_and_save))
 
     ######## Main optimization loop #######
     noise_opt = DNO(model=solver, criterion=criterion, start_z=cur_xt, conf=noise_opt_conf, callbacks=callbacks)
@@ -138,29 +166,7 @@ def main(config_file: str, dot_list=None):
     if topk := callbacks.get(SaveTopKCallback):
         out = topk.best_models[0].state_dict
 
-    captions, cur_lengths, cur_motions, cur_texts, num_dump_step = process_results(
-        args,
-        data,
-        gen_sample,
-        inter_out,
-        model,
-        model_kwargs,
-        out,
-        sample,
-        sample_2,
-        step_out_list,
-        target,
-        out["stop_optimize"],
-    )
-
-    all_motions.extend(cur_motions)
-    all_lengths.extend(cur_lengths)
-    all_text.extend(cur_texts)
-    # end for rep_i in range(args.num_repetitions):
-
-    save_videos(
-        all_lengths, all_motions, all_text, args, captions, kframes, num_dump_step, obs_list, show_target_pose, target
-    )
+    process_and_save(out)
 
 
 def load_dataset(args, n_frames):
@@ -421,9 +427,7 @@ def process_results(
     step_out_list = [int(aa * stop_optimize) for aa in step_out_list]
     step_out_list[-1] = stop_optimize - 1
 
-    for t in step_out_list:
-        print("save optimize at", t)
-
+    for t in tqdm(step_out_list, ncols=0, dynamic_ncols=False, desc="Saving results"):
         # aggregate the batch
         inter_step = []
         for i in range(args.num_trials):
