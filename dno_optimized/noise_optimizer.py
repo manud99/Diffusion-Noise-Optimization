@@ -3,16 +3,20 @@ from typing import Callable, TypedDict
 
 import torch
 from torch import Tensor
-from tqdm import tqdm
 from torch.optim.optimizer import ParamsT
+from tqdm import tqdm
 
-from dno_optimized.levenberg_marquardt import LevenbergMarquardt
 from dno_optimized.callbacks.callback import CallbackList
+from dno_optimized.levenberg_marquardt import LevenbergMarquardt
 from dno_optimized.options import DNOOptions, OptimizerType
 
 
 def create_optimizer(
-    optimizer: OptimizerType, params: ParamsT, config: DNOOptions, model: Callable[[Tensor], Tensor], criterion: Callable[[Tensor], Tensor]
+    optimizer: OptimizerType,
+    params: ParamsT,
+    config: DNOOptions,
+    model: Callable[[Tensor], Tensor],
+    criterion: Callable[[Tensor], Tensor],
 ) -> torch.optim.Optimizer:
     print("Config:", config)
     match optimizer:
@@ -55,6 +59,13 @@ class DNOInfoDict(TypedDict):
     diff_norm: torch.Tensor
     z: torch.Tensor
     x: torch.Tensor
+
+
+class DNOStateDict(TypedDict):
+    z: torch.Tensor
+    x: torch.Tensor
+    hist: list[DNOInfoDict]
+    stop_optimize: int
 
 
 def default_info() -> DNOInfoDict:
@@ -148,6 +159,7 @@ class DNO:
 
         i = 0
         for i in (pb := tqdm(range(num_steps))):
+
             def closure():
                 # Reset gradients
                 self.optimizer.zero_grad()
@@ -181,18 +193,24 @@ class DNO:
 
         hist = self.compute_hist(batch_size=batch_size)
 
-        self.callbacks.invoke(self, "train_end", num_steps=num_steps, batch_size=batch_size, hist=hist)
-
         assert self.last_x is not None, "Missing result"
-        return self.state_dict()
+        state_dict = self.state_dict()
 
-    def state_dict(self):
+        self.callbacks.invoke(
+            self, "train_end", num_steps=num_steps, batch_size=batch_size, hist=hist, state_dict=state_dict
+        )
+
+        return state_dict
+
+    def state_dict(self) -> DNOStateDict:
         hist = self.compute_hist(self.batch_size)
+        assert self.stop_optimize is not None, "Set DNO.stop_optimize before calling DNO.state_dict()"
+        assert self.last_x is not None, "Please run at least one optimization iteration before calling DNO.state_dict()"
         return {
             # Last step's z
             "z": self.current_z.detach(),
             # Previous step's x
-            "x": self.last_x.detach() if self.last_x is not None else None,
+            "x": self.last_x.detach(),
             "hist": hist,
             # Amount of performed optimize steps
             "stop_optimize": self.stop_optimize,

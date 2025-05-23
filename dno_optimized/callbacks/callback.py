@@ -1,3 +1,4 @@
+import inspect
 import os
 import textwrap
 from abc import ABC
@@ -9,7 +10,7 @@ from tqdm import tqdm
 from dno_optimized.options import GenerateOptions
 
 if TYPE_CHECKING:
-    from ..noise_optimizer import DNO, DNOInfoDict
+    from ..noise_optimizer import DNO, DNOInfoDict, DNOStateDict
 
 
 def _terminal_width(fallback: int = 80):
@@ -55,24 +56,38 @@ class Callback(ABC):
         self.every_n_steps = every_n_steps or 1
         self.start_after = start_after or 0
 
+    def __post_init__(self, callbacks: "CallbackList"):
+        """Called once all callbacks have been instantiated. Can be overridden to depend on other callbacks.
+
+        :param callbacks: List of callbacks in use.
+        """
+        pass
+
     def _should_run_step_callback(self):
         step = self.dno.step_count
         return step >= self.start_after and (step % self.every_n_steps) == 0
 
     def invoke(
-        self, callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], *args, **kwargs
+        self, callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], **kwargs
     ) -> CallbackStepAction | None:
+        # Invoke function only with kwargs that are actually accepted by the function. This way, callbacks can choose
+        # what kwargs to accept.
+        def invoke_with_kwargs(func, kwargs):
+            sig = inspect.signature(func)
+            accepted = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            return func(**accepted)
+
         match callback_stage:
             case "train_begin":
-                return self.on_train_begin(*args, **kwargs)
+                return invoke_with_kwargs(self.on_train_begin, kwargs)
             case "train_end":
-                return self.on_train_end(*args, **kwargs)
+                return invoke_with_kwargs(self.on_train_end, kwargs)
             case "step_begin":
                 if self._should_run_step_callback():
-                    return self.on_step_begin(*args, **kwargs)
+                    return invoke_with_kwargs(self.on_step_begin, kwargs)
             case "step_end":
                 if self._should_run_step_callback():
-                    return self.on_step_end(*args, **kwargs)
+                    return invoke_with_kwargs(self.on_step_end, kwargs)
         return None
 
     @classmethod
@@ -88,12 +103,13 @@ class Callback(ABC):
         """
         pass
 
-    def on_train_end(self, num_steps: int, batch_size: int, hist: "list[DNOInfoDict]"):
+    def on_train_end(self, num_steps: int, batch_size: int, hist: "list[DNOInfoDict]", state_dict: "DNOStateDict"):
         """Runs once when the training is done (completed all iterations or other callback resulted in a stop condition).
 
         :param num_steps: Number of optimization steps (effective)
         :param batch_size: Batch size (number of trials)
         :param hist List (over batch) of dicts containing lists (over steps) with metrics
+        :param state_dict State dict computed after the last optimization step
         """
         pass
 
@@ -137,7 +153,7 @@ class CallbackList(list[Callback]):
         super().__init__(callbacks or [])
 
     def invoke(
-        self, dno: "DNO", callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], *args, **kwargs
+        self, dno: "DNO", callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], **kwargs
     ):
         actions = []
         if "pb" in kwargs:
@@ -149,7 +165,7 @@ class CallbackList(list[Callback]):
             callback.dno = dno
             if pb:
                 callback.progress = pb
-            action = callback.invoke(callback_stage, *args, **kwargs)
+            action = callback.invoke(callback_stage, **kwargs)
             actions.append(action)
         return CallbackStepAction.aggregate(actions)
 
@@ -184,5 +200,9 @@ class CallbackList(list[Callback]):
                     final.append(cb)
             final.extend(other)
             self[:] = final  # Replace own
+        else:
+            raise ValueError(mode)
 
-        raise ValueError(mode)
+    def post_init(self):
+        for cb in self:
+            cb.__post_init__(self)
