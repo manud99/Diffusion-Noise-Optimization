@@ -1,4 +1,5 @@
 import os
+
 import numpy as np
 
 from data_loaders.humanml.scripts.motion_process import recover_from_ric
@@ -65,18 +66,18 @@ def sample_to_motion(sample_list, args, model_kwargs, model, n_frames,
     return all_motions, all_lengths, all_text
 
 
-def construct_template_variables(unconstrained):
+def construct_template_variables(unconstrained, step: int | None = None):
     row_file_template = 'sample{:02d}.mp4'
     all_file_template = 'samples_{:02d}_to_{:02d}.mp4'
     if unconstrained:
-        sample_file_template = 'row{:02d}_col{:02d}.mp4'
+        sample_file_template = ('step{:04d}_' if step else '') + 'row{:02d}_col{:02d}.mp4'
         sample_print_template = '[{} row #{:02d} column #{:02d} | -> {}]'
         row_file_template = row_file_template.replace('sample', 'row')
         row_print_template = '[{} row #{:02d} | all columns | -> {}]'
         all_file_template = all_file_template.replace('samples', 'rows')
         all_print_template = '[rows {:02d} to {:02d} | -> {}]'
     else:
-        sample_file_template = 'sample{:02d}_rep{:02d}.mp4'
+        sample_file_template = ('step{:04d}_' if step else '') + 'sample{:02d}_rep{:02d}.mp4'
         sample_print_template = '["{}" ({:02d}) | Rep #{:02d} | -> {}]'
         row_print_template = '[ "{}" ({:02d}) | all repetitions | -> {}]'
         all_print_template = '[samples {:02d} to {:02d} | all repetitions | -> {}]'
@@ -105,7 +106,7 @@ def save_multiple_samples(args, out_path, row_print_template,
         ffmpeg_rep_files = [f' -i {f} ' for f in sample_files]
         vstack_args = f' -filter_complex hstack=inputs={len(sample_files)}' if len(
             sample_files) > 1 else ''
-        ffmpeg_rep_cmd = f'ffmpeg -y -loglevel warning ' + ''.join(
+        ffmpeg_rep_cmd = 'ffmpeg -y -loglevel warning ' + ''.join(
             ffmpeg_rep_files) + f'{vstack_args} {all_sample_save_path}'
         os.system(ffmpeg_rep_cmd)
         sample_files = []
@@ -161,8 +162,8 @@ def vis_fn(sample, filename, data, model, concat=False, abs_3d=False, traj_only=
         all_rep_save_path = os.path.join(out_path, "log_dump",
                                             "compare.mp4")
         ffmpeg_rep_files = [f' -i {f} ' for f in name_list]
-        hstack_args = f' -filter_complex hstack=inputs=2'
-        ffmpeg_rep_cmd = f'ffmpeg -y -loglevel warning ' + ''.join(
+        hstack_args = ' -filter_complex hstack=inputs=2'
+        ffmpeg_rep_cmd = 'ffmpeg -y -loglevel warning ' + ''.join(
             ffmpeg_rep_files) + f'{hstack_args} {all_rep_save_path}'
         os.system(ffmpeg_rep_cmd)
         # print(row_print_template.format(caption, sample_i, all_rep_save_file))

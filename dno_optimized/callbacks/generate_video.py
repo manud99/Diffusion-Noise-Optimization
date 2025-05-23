@@ -26,7 +26,7 @@ class GenerateVideoCallback(Callback):
     def from_config(cls, options: GenerateOptions, config: dict) -> Self:
         return cls(
             out_dir=config.get("out_dir", options.out_path / "intermediate_videos"),
-            every_n_steps=config.get("every_n_steps", 10), # Override default
+            every_n_steps=config.get("every_n_steps", 10),  # Override default
             start_after=config.get("start_after"),
         )
 
@@ -38,9 +38,11 @@ class GenerateVideoCallback(Callback):
             )
             return
 
+        self.progress.write("Saving intermedaite video")
+
         # Get current output
         out = self.dno.state_dict()
 
         # Visualize
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.process_fn(out, save=False, plots=False, videos=True, out_dir=str(self.out_dir))
+        self.process_fn(out, save=False, plots=False, videos=True, step=step, out_dir=str(self.out_dir))

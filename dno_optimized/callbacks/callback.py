@@ -79,8 +79,11 @@ class Callback(ABC):
         pass
 
     def _should_run_step_callback(self):
+        # 1-based modulo, 0-based start-after
+        # Example:
+        # On 12 iterations, with start_after=3 and every_n_steps=3, would execute on steps (0-based) 5, 8, 11 (2 is skipped)
         step = self.dno.step_count
-        return step >= self.start_after and (step % self.every_n_steps) == 0
+        return step >= self.start_after and ((step + 1) % self.every_n_steps) == 0
 
     def invoke(
         self, callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], **kwargs

@@ -123,6 +123,7 @@ def generate(config_file: str, dot_list=None):
         plots: bool = True,
         videos: bool = True,
         out_dir: str | None = None,
+        step: int | None = None,
         verbose: bool = False,
     ):
         """Processes optimized output with various actions
@@ -132,6 +133,7 @@ def generate(config_file: str, dot_list=None):
         :param plots: Plot results to matplotlib and save, defaults to True
         :param videos: Generate and save videos, defaults to True
         :param out_dir: Output directory, defaults to args.out_path
+        :param step: Current optimization step, or None if end of optimization
         :param verbose: Verbose output
         """
         out_dir = out_dir or str(args.out_path)
@@ -169,7 +171,8 @@ def generate(config_file: str, dot_list=None):
                 show_target_pose,
                 target,
                 out_dir=out_dir,
-                verbose=verbose
+                on_step=step,
+                verbose=verbose,
             )
 
     # Slightly janky, but we pass `process_and_save` to callbacks post-init, so that callbacks like GenerateVideo can
@@ -577,6 +580,7 @@ def save_videos(
     show_target_pose,
     target,
     out_dir: str,
+    on_step: int | None = None,
     verbose: bool = False,
 ):
     if verbose:
@@ -593,15 +597,15 @@ def save_videos(
         all_file_template,
     ) = construct_template_variables(args.unconstrained)
 
-    for sample_i in range(args.num_samples):
+    for sample_i in tqdm(range(args.num_samples), ncols=0, dynamic_ncols=False, desc="Saving videos"):
         rep_files = []
 
-        print("saving", sample_i)
         caption = all_text[sample_i]
         length = all_lengths[sample_i]
         motion = all_motions[sample_i].transpose(2, 0, 1)[:length]
-        save_file = sample_file_template.format(0, sample_i)
-        print(sample_print_template.format(caption, 0, sample_i, save_file))
+        save_file = sample_file_template.format(*(([on_step] if on_step else []) + [0, sample_i]))
+        if verbose:
+            print(sample_print_template.format(caption, 0, sample_i, save_file))
         animation_save_path = os.path.join(out_dir, save_file)
         plot_3d_motion(
             animation_save_path,
@@ -633,7 +637,8 @@ def save_videos(
         )
 
     abs_path = os.path.abspath(out_dir)
-    print(f"[Done] Results are at [{abs_path}]")
+    if verbose:
+        print(f"[Done] Results are at [{abs_path}]")
 
 
 def main():

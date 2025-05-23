@@ -152,10 +152,12 @@ class DNO:
 
         batch_size = self.start_z.shape[0]
 
+        self.step_count = 0
         self.callbacks.invoke(self, "train_begin", num_steps=num_steps, batch_size=batch_size)
 
-        i = 0
-        for i in (pb := tqdm(range(num_steps))):
+        pb = tqdm(total=num_steps)
+        for i in range(num_steps):
+            assert self.step_count == i
 
             def closure():
                 # Reset gradients
@@ -176,16 +178,19 @@ class DNO:
 
             self.update_metrics(self.last_x)
 
+            pb.set_postfix({"loss": self.info["loss"].mean().item()})
+            pb.update(1)
+
             # Post-step callbacks
             res = self.callbacks.invoke(self, "step_end", pb=pb, step=i, info=self.info, hist=self.hist)
             if res.stop:
                 break
 
-            pb.set_postfix({"loss": self.info["loss"].mean().item()})
+            self.step_count += 1
 
         # Check for early stopping
-        if i != num_steps - 1:
-            print(f"INFO: Stopping optimization early at step {i}/{num_steps}")
+        if self.step_count != num_steps - 1:
+            print(f"INFO: Stopping optimization early at step {self.step_count}/{num_steps}")
 
         hist = self.compute_hist(batch_size=batch_size)
 
@@ -288,7 +293,6 @@ class DNO:
         self.info["z"] = self.current_z.detach().cpu()
         self.info["x"] = x.detach().cpu()
 
-        self.step_count += 1
         self.hist.append(self.info)
 
     def compute_hist(self, batch_size):
