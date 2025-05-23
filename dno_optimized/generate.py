@@ -124,6 +124,7 @@ def generate(config_file: str, dot_list=None):
         videos: bool = True,
         out_dir: str | None = None,
         step: int | None = None,
+        keep_all_videos: bool = False,
         verbose: bool = False,
     ):
         """Processes optimized output with various actions
@@ -134,6 +135,7 @@ def generate(config_file: str, dot_list=None):
         :param videos: Generate and save videos, defaults to True
         :param out_dir: Output directory, defaults to args.out_path
         :param step: Current optimization step, or None if end of optimization
+        :param keep_all_videos: Whether to keep all videos or only the merged one, defaults to False
         :param verbose: Verbose output
         """
         out_dir = out_dir or str(args.out_path)
@@ -172,6 +174,7 @@ def generate(config_file: str, dot_list=None):
                 target,
                 out_dir=out_dir,
                 on_step=step,
+                delete_originals=not keep_all_videos,
                 verbose=verbose,
             )
 
@@ -189,7 +192,7 @@ def generate(config_file: str, dot_list=None):
     if topk := callbacks.get(SaveTopKCallback):
         out = topk.best_models[0].state_dict
 
-    process_and_save(out, save=True, plots=True, videos=True, verbose=True)
+    process_and_save(out, save=True, plots=True, videos=True, keep_all_videos=True, verbose=True)
 
 
 def load_dataset(args, n_frames):
@@ -581,6 +584,7 @@ def save_videos(
     target,
     out_dir: str,
     on_step: int | None = None,
+    delete_originals: bool = False,
     verbose: bool = False,
 ):
     if verbose:
@@ -639,7 +643,7 @@ def save_videos(
             sample_i,
             on_step=on_step,
             verbose=verbose,
-            delete_originals=True,
+            delete_originals=delete_originals,
         )
 
         if pb is not None:

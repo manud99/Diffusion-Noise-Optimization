@@ -122,6 +122,10 @@ class DNO:
             )
             print(f"INFO: Using cosine learning rate decay over {conf.lr_decay_steps} steps")
 
+        print(f"INFO: Gradient normalization: {'ON' if self.conf.normalize_gradient else 'OFF'}")
+        if self.conf.gradient_clip_val is not None:
+            print(f"INFO: Gradient clip value: {self.conf.gradient_clip_val:.3f}")
+
         self.step_count = 0
 
         # Optimizer closure running variables
@@ -244,14 +248,13 @@ class DNO:
         assert loss.shape == (batch_size,)
         # Clone necessary if already on CPU since we modify loss in-place
         self.info["loss_objective"] = loss.detach().cpu().clone()
-        loss = loss.sum()
 
         # diff penalty
         if self.conf.diff_penalty_scale > 0:
             # [batch_size,]
             loss_diff = (self.current_z - self.start_z).norm(p=2, dim=self.dims)
             assert loss_diff.shape == (batch_size,)
-            loss += self.conf.diff_penalty_scale * loss_diff.sum()
+            loss += self.conf.diff_penalty_scale * loss_diff
             self.info["loss_diff"] = loss_diff.detach().cpu()
         else:
             self.info["loss_diff"] = torch.tensor([0] * batch_size, device="cpu")
@@ -263,15 +266,18 @@ class DNO:
                 dim=self.conf.decorrelate_dim,
             )
             assert loss_decorrelate.shape == (batch_size,)
-            loss += self.conf.decorrelate_scale * loss_decorrelate.sum()
+            loss += self.conf.decorrelate_scale * loss_decorrelate
             self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
         else:
             self.info["loss_decorrelate"] = torch.tensor([0] * batch_size, device="cpu")
 
-        self.info["loss"] = loss.detach().cpu().clone().repeat(batch_size)
+        self.info["loss"] = loss.detach().cpu().clone()
 
+        # Aggregate over batch: sum, mean, or other? e.g. max? min?
+        # Original DNO: sum
+        loss_agg = loss.sum()
         # backward
-        loss.backward()
+        loss_agg.backward()
 
         # log grad norm (before)
         assert self.current_z.grad is not None
@@ -285,7 +291,7 @@ class DNO:
         if self.conf.gradient_clip_val is not None:
             torch.nn.utils.clip_grad_norm_(self.current_z, self.conf.gradient_clip_val, norm_type=2)
 
-        return loss
+        return loss_agg
 
     def noise_perturbation(self, lr_frac, batch_size):
         # noise perturbation
