@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from omegaconf import OmegaConf
-from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
 from data_loaders.get_data import DatasetConfig, get_dataset_loader
@@ -27,10 +26,10 @@ from utils.fixseed import fixseed
 from utils.model_util import create_gaussian_diffusion, create_model_and_diffusion, load_model_wo_clip
 from utils.output_util import construct_template_variables, sample_to_motion, save_multiple_samples
 
-from .noise_optimizer import DNO, DNOOptions
+from .noise_optimizer import DNO, DNOOptions, DNOStateDict
 
 
-def main(config_file: str, dot_list=None):
+def generate(config_file: str, dot_list=None):
     if dot_list is None:
         dot_list = []
     # Create structured base config
@@ -112,14 +111,31 @@ def main(config_file: str, dot_list=None):
             gradient_checkpoint=args.gradient_checkpoint,
         )
 
-    # 
+    #
     # Function to process results and save to numpy and generate videos. This is used in:
     #
     # - Save video callbacks
     # - Final result generation
     #
-    def process_and_save(out):
-        captions, cur_lengths, cur_motions, cur_texts, num_dump_step = process_results(
+    def process_and_save(
+        out,
+        save: bool = True,
+        plots: bool = True,
+        videos: bool = True,
+        out_dir: str | None = None,
+        verbose: bool = False,
+    ):
+        """Processes optimized output with various actions
+
+        :param out: DNO output
+        :param save: Save results to numpy file, defaults to True
+        :param plots: Plot results to matplotlib and save, defaults to True
+        :param videos: Generate and save videos, defaults to True
+        :param out_dir: Output directory, defaults to args.out_path
+        :param verbose: Verbose output
+        """
+        out_dir = out_dir or str(args.out_path)
+        captions, all_lengths, all_motions, all_texts, num_dump_step = process_results(
             args,
             data,
             gen_sample,
@@ -134,20 +150,31 @@ def main(config_file: str, dot_list=None):
             out["stop_optimize"],
         )
 
-        save_videos(
-            cur_lengths,
-            cur_motions,
-            cur_texts,
-            args,
-            captions,
-            kframes,
-            num_dump_step,
-            obs_list,
-            show_target_pose,
-            target,
-        )
+        if plots:
+            save_plots(out, args.num_trials, out_dir, verbose=verbose)
 
-    # Pass process_fn for save video callback (closure including all necessary data)
+        if save:
+            save_results(out, all_motions, all_texts, all_lengths, args, out_dir=out_dir, verbose=verbose)
+
+        if videos:
+            save_videos(
+                all_lengths,
+                all_motions,
+                all_texts,
+                args,
+                captions,
+                kframes,
+                num_dump_step,
+                obs_list,
+                show_target_pose,
+                target,
+                out_dir=out_dir,
+                verbose=verbose
+            )
+
+    # Slightly janky, but we pass `process_and_save` to callbacks post-init, so that callbacks like GenerateVideo can
+    # use this function to save videos. Should be refactored once the code in this main file has been modularized and
+    # cleaned up.
     callbacks = callbacks_from_options(args, post_init_kwargs=dict(process_fn=process_and_save))
 
     ######## Main optimization loop #######
@@ -159,7 +186,7 @@ def main(config_file: str, dot_list=None):
     if topk := callbacks.get(SaveTopKCallback):
         out = topk.best_models[0].state_dict
 
-    process_and_save(out)
+    process_and_save(out, save=True, plots=True, videos=True)
 
 
 def load_dataset(args, n_frames):
@@ -422,32 +449,6 @@ def process_results(
         inter_step = torch.stack(inter_step, dim=0)
         inter_out.append(inter_step)
 
-    for i in range(args.num_trials):
-        hist = out["hist"][i]
-        # Plot loss
-        for key in [
-            "loss",
-            "loss_diff",
-            "loss_decorrelate",
-            "grad_norm",
-            "lr",
-            "perturb_scale",
-            "diff_norm",
-        ]:
-            plt.figure()
-            if key in ["loss", "loss_diff", "loss_decorrelate"]:
-                plt.semilogy(hist["step"], hist[key])
-                # plt.ylim(top=0.4)
-                # Plot horizontal red line at lowest point of loss function
-                min_loss = min(hist[key])
-                plt.axhline(y=min_loss, color="r")
-                plt.text(0, min_loss, f"Min Loss: {min_loss:.4f}", color="r")
-            else:
-                plt.plot(hist["step"], hist[key])
-            plt.legend([key])
-            plt.savefig(os.path.join(args.out_path, f"trial_{i}_{key}.png"))
-            plt.close()
-
     final_out = out["x"].detach().clone()
 
     ### Concat generated motion for visualization
@@ -466,9 +467,6 @@ def process_results(
             "Original",
         ] + [f"Prediction {i + 1}" for i in range(args.num_trials)]
         args.num_samples = 1 + args.num_trials
-
-    torch.save(out["z"], os.path.join(args.out_path, "optimized_z.pt"))
-    torch.save(out["x"], os.path.join(args.out_path, "optimized_x.pt"))
 
     ###################
     num_dump_step = 1
@@ -499,33 +497,57 @@ def process_results(
         ] + [f"Prediction {i + 1}" for i in range(args.num_trials)]
         args.num_samples = 2 + args.num_trials
 
-    return captions, cur_lengths, cur_motions, cur_texts, num_dump_step
-
-
-def save_videos(
-    all_lengths,
-    all_motions,
-    all_text,
-    args,
-    captions,
-    kframes,
-    num_dump_step,
-    obs_list,
-    show_target_pose,
-    target,
-    tb_writer: SummaryWriter | None = None,
-):
     total_num_samples = args.num_samples * args.num_repetitions * num_dump_step
 
     # After concat -> [r1_dstep_1, r2_dstep_1, r3_dstep_1, r1_dstep_2, r2_dstep_2, ....]
-    all_motions = np.concatenate(all_motions, axis=0)  # [bs * num_dump_step, 1, 3, 120]
+    all_motions = np.concatenate(cur_motions, axis=0)  # [bs * num_dump_step, 1, 3, 120]
     all_motions = all_motions[:total_num_samples]  # [bs, njoints, 3, seqlen]
-    all_text = all_text[:total_num_samples]  # len() = args.num_samples * num_dump_step
-    all_lengths = np.concatenate(all_lengths, axis=0)[:total_num_samples]
+    all_text = cur_texts[:total_num_samples]  # len() = args.num_samples * num_dump_step
+    all_lengths = np.concatenate(cur_lengths, axis=0)[:total_num_samples]
 
-    npy_path = os.path.join(args.out_path, "results.npy")
+    return captions, all_lengths, all_motions, all_text, num_dump_step
 
-    print(f"saving results file to [{npy_path}]")
+
+def save_plots(out: DNOStateDict, num_trials: int, out_dir: str, verbose: bool = False):
+    if verbose:
+        print(f"Saving plots to [{out_dir}/*]")
+
+    for i in range(num_trials):
+        hist = out["hist"][i]
+        # Plot loss
+        for key in [
+            "loss",
+            "loss_diff",
+            "loss_decorrelate",
+            "grad_norm",
+            "lr",
+            "perturb_scale",
+            "diff_norm",
+        ]:
+            plt.figure()
+            if key in ["loss", "loss_diff", "loss_decorrelate"]:
+                plt.semilogy(hist["step"], hist[key])
+                # plt.ylim(top=0.4)
+                # Plot horizontal red line at lowest point of loss function
+                min_loss = min(hist[key])
+                plt.axhline(y=min_loss, color="r")
+                plt.text(0, min_loss, f"Min Loss: {min_loss:.4f}", color="r")
+            else:
+                plt.plot(hist["step"], hist[key])
+            plt.legend([key])
+            plt.savefig(os.path.join(out_dir, f"trial_{i}_{key}.png"))
+            plt.close()
+
+
+def save_results(out: DNOStateDict, all_motions, all_text, all_lengths, args, out_dir: str, verbose: bool = False):
+    torch.save(out["z"], os.path.join(out_dir, "optimized_z.pt"))
+    torch.save(out["x"], os.path.join(out_dir, "optimized_x.pt"))
+
+    npy_path = os.path.join(out_dir, "results.npy")
+
+    if verbose:
+        print(f"Saving results file to [{npy_path}]")
+
     np.save(
         npy_path,
         {
@@ -542,7 +564,23 @@ def save_videos(
     with open(npy_path.replace(".npy", "_len.txt"), "w") as fw:
         fw.write("\n".join([str(length) for length in all_lengths]))
 
-    print(f"saving visualizations to [{args.out_path}]...")
+
+def save_videos(
+    all_lengths,
+    all_motions,
+    all_text,
+    args,
+    captions,
+    kframes,
+    num_dump_step,
+    obs_list,
+    show_target_pose,
+    target,
+    out_dir: str,
+    verbose: bool = False,
+):
+    if verbose:
+        print(f"Saving visualizations to [{out_dir}/*]...")
 
     sample_files = []
     num_samples_in_out_file = num_dump_step
@@ -564,7 +602,7 @@ def save_videos(
         motion = all_motions[sample_i].transpose(2, 0, 1)[:length]
         save_file = sample_file_template.format(0, sample_i)
         print(sample_print_template.format(caption, 0, sample_i, save_file))
-        animation_save_path = os.path.join(args.out_path, save_file)
+        animation_save_path = os.path.join(out_dir, save_file)
         plot_3d_motion(
             animation_save_path,
             t2m_kinematic_chain,
@@ -582,7 +620,7 @@ def save_videos(
         # Check if we need to stack video
         sample_files = save_multiple_samples(
             args,
-            args.out_path,
+            out_dir,
             row_print_template,
             all_print_template,
             row_file_template,
@@ -594,11 +632,11 @@ def save_videos(
             sample_i,
         )
 
-    abs_path = os.path.abspath(args.out_path)
+    abs_path = os.path.abspath(out_dir)
     print(f"[Done] Results are at [{abs_path}]")
 
 
-if __name__ == "__main__":
+def main():
     parser = ArgumentParser(
         prog="python -m dno_optimized.generate",
         description="Edit a new motion that was generated by a text-to-motion model.",
@@ -607,7 +645,12 @@ if __name__ == "__main__":
     parser.add_argument("dotlist", nargs="*", help="A dotlist of arguments parsed by omegaconf.")
     args = parser.parse_args()
     try:
-        main(args.config_file, args.dotlist)
+        generate(args.config_file, args.dotlist)
     except KeyboardInterrupt:
         print("Aborted.", file=sys.stderr)
         sys.exit(1)
+
+
+# Use separate main function to avoid polluting global scope with variables
+if __name__ == "__main__":
+    main()
