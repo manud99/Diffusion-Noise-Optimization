@@ -46,8 +46,6 @@ class ProfilerCallback(Callback):
     def from_config(cls, options: GenerateOptions, config: dict) -> Self:
         return cls(
             report_dir=config.get("report_dir") or str(options.out_path / "profiler"),
-            every_n_steps=config.get("every_n_steps"),
-            start_after=config.get("start_after"),
         )
 
     def _log(self, global_step: int, key: str, value: float | int, tb_tag: str | None = None):

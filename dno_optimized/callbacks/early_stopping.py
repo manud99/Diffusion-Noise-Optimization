@@ -39,8 +39,6 @@ class EarlyStoppingCallback(Callback):
             mode=config.get("mode", "min"),
             metric=config.get("metric", "loss"),
             abs_value=config.get("abs_value"),
-            every_n_steps=config.get("every_n_steps"),
-            start_after=config.get("start_after"),
         )
 
     @override

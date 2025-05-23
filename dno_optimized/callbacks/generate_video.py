@@ -27,7 +27,6 @@ class GenerateVideoCallback(Callback):
         return cls(
             out_dir=config.get("out_dir", options.out_path / "intermediate_videos"),
             every_n_steps=config.get("every_n_steps", 10),  # Override default
-            start_after=config.get("start_after"),
         )
 
     def on_step_end(self, step: int, info: DNOInfoDict, hist: list[DNOInfoDict]) -> CallbackStepAction | None:

@@ -57,19 +57,24 @@ class CallbackStepAction:
 class Callback(ABC):
     """Base class for all callbacks. Override one or more `on_[...]` methods to implement functionality."""
 
-    def __init__(self, every_n_steps: int | None = None, start_after: int | None = None):
+    def __init__(
+        self, every_n_steps: int | None = None, start_after: int | None = None, schedule: list[int] | None = None
+    ):
         """Initialize callback
 
         :param every_n_steps: Set this value to run the callback only every n training steps. Starts counting at 1. Only
             affects `on_train_[...]` callbacks.
         :param start_after: Set this value to only start running the callback after the first n training steps. Can be
             combined with every_n_steps. Only affects `on_train_[...]` callbacks.
+        :param schedule: List of steps where the step callbacks should be run. Overrides `start_after` and
+            `every_n_steps`.
         """
         super().__init__()
         self.dno: "DNO"
         self.progress: tqdm
         self.every_n_steps = every_n_steps or 1
         self.start_after = start_after or 0
+        self.schedule = schedule
 
     def __post_init__(self, callbacks: "CallbackList"):
         """Called once all callbacks have been instantiated. Can be overridden to depend on other callbacks.
@@ -80,7 +85,9 @@ class Callback(ABC):
 
     def _should_run_step_callback(self):
         step = self.dno.step_count
-        return step > self.start_after and (step  % self.every_n_steps) == 0
+        if self.schedule is not None:
+            return step in self.schedule
+        return step > self.start_after and (step % self.every_n_steps) == 0
 
     def invoke(
         self, callback_stage: Literal["train_begin", "train_end", "step_begin", "step_end"], **kwargs
@@ -97,6 +104,14 @@ class Callback(ABC):
                 if self._should_run_step_callback():
                     return _invoke_with_kwargs(self.on_step_end, kwargs)
         return None
+
+    def init_from_config(self, options: GenerateOptions, config: dict):
+        if self.every_n_steps is None:
+            self.every_n_steps = config.get("every_n_steps", 1)
+        if self.start_after is None:
+            self.start_after = config.get("start_after", 0)
+        if self.schedule is None:
+            self.schedule = config.get("schedule")
 
     @classmethod
     def from_config(cls, options: GenerateOptions, config: dict) -> Self:

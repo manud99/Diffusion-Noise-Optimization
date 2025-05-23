@@ -44,7 +44,7 @@ class ModelCheckpoint:
     step: int
     metric_name: str
     metric_value: float
-    state_dict: dict
+    state_dict: DNOStateDict
     type: Literal["best", "latest"]
 
     def get_save_path(self, save_dir: Path):
@@ -91,8 +91,6 @@ class SaveTopKCallback(Callback):
             mode=config.get("mode", "min"),
             save_latest=config.get("save_latest", True),
             flush_every=config.get("flush_every", 10),
-            every_n_steps=config.get("every_n_steps"),
-            start_after=config.get("start_after"),
         )
 
     @property

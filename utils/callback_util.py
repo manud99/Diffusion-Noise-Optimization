@@ -16,19 +16,23 @@ def create_callback(name: str, options: GenerateOptions, callback_args: dict) ->
     :raises KeyError: The provided callback is not registered.
     :return: Instantiated callback
     """
+    callback = None
     match name:
         case "tensorboard":
-            return TensorboardCallback.from_config(options, callback_args)
+            callback = TensorboardCallback.from_config(options, callback_args)
         case "early_stopping":
-            return EarlyStoppingCallback.from_config(options, callback_args)
+            callback = EarlyStoppingCallback.from_config(options, callback_args)
         case "save_top_k":
-            return SaveTopKCallback.from_config(options, callback_args)
+            callback = SaveTopKCallback.from_config(options, callback_args)
         case "profiler":
-            return ProfilerCallback.from_config(options, callback_args)
+            callback = ProfilerCallback.from_config(options, callback_args)
         case "generate_video":
-            return GenerateVideoCallback.from_config(options, callback_args)
+            callback = GenerateVideoCallback.from_config(options, callback_args)
         case _:
             raise KeyError(f"`{name}` is not a valid callback name")
+    # Set common options
+    callback.init_from_config(options, callback_args)
+    return callback
 
 
 def default_callbacks(options: GenerateOptions, run_post_init: bool = False) -> CallbackList:

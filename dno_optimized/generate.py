@@ -607,7 +607,7 @@ def save_videos(
         length = all_lengths[sample_i]
         motion = all_motions[sample_i].transpose(2, 0, 1)[:length]
         save_file = sample_file_template.format(*(([on_step] if on_step else []) + [0, sample_i]))
-        if verbose:
+        if pb is not None:
             pb.write(sample_print_template.format(caption, 0, sample_i, save_file))
         animation_save_path = os.path.join(out_dir, save_file)
         plot_3d_motion(
