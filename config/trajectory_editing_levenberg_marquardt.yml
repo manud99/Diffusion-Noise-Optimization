@@ -5,7 +5,7 @@ dataloader_num_workers: 2
 dno:
   num_opt_steps: 20
   optimizer: LevenbergMarquardt # Adam, SGD, LBFGS, LevenbergMarquardt, ...
-  lr: 0.5
+  lr: 0.1
   lr_warm_up_steps: 0 # 5
   lr_decay_steps: 0 # 10
   diff_penalty_scale: 2e-3 # default: 2e-3 for editing tasks (i.e. pose and trajectory editing) and 0 otherwise
@@ -30,17 +30,17 @@ extra_callbacks:
       min_improvement: 0
       abs_value: 1e-5
   - name: profiler
-  - name: generate_video
-    args:
-     schedule:
-       [
-         2,
-         4,
-         6,
-         8,
-         10,
-         12,
-         14,
-         16,
-         18
-       ]
+#  - name: generate_video
+#    args:
+#     schedule:
+#       [
+#         2,
+#         4,
+#         6,
+#         8,
+#         10,
+#         12,
+#         14,
+#         16,
+#         18
+#       ]

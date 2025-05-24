@@ -4,6 +4,7 @@ from typing import Callable, TypedDict
 import torch
 from torch import Tensor
 from torch.optim.optimizer import ParamsT
+from torch_levenberg_marquardt.damping import StandardDampingStrategy
 from tqdm import tqdm
 from colorama import Fore
 
@@ -39,11 +40,20 @@ def create_optimizer(
             raise NotImplementedError(optimizer)
         case OptimizerType.LevenbergMarquardt:
             assert config.levenbergMarquardt.solve_method in ['qr', 'cholesky', 'solve', 'lstsq']
+            dampingStrategy = StandardDampingStrategy(
+                starting_value=config.levenbergMarquardt.damping_strategy.starting_value,
+                dec_factor=config.levenbergMarquardt.damping_strategy.dec_factor,
+                inc_factor=config.levenbergMarquardt.damping_strategy.inc_factor,
+                min_value=config.levenbergMarquardt.damping_strategy.min_value,
+                max_value=config.levenbergMarquardt.damping_strategy.max_value,
+                damping_mode=config.levenbergMarquardt.damping_strategy.damping_mode,
+            )
             return LevenbergMarquardt(
                 params,
                 model=model,
                 loss_fn=criterion,
                 learning_rate=config.lr,
+                damping_strategy=dampingStrategy,
                 attempts_per_step=config.levenbergMarquardt.attempts_per_step,
                 solve_method=config.levenbergMarquardt.solve_method,
             )
@@ -198,18 +208,20 @@ class DNO:
             self.noise_perturbation(self.lr_frac, batch_size=batch_size)
 
             # Merge logs from LevenbergMarquardt with our info object
+            stop_training = False
             if isinstance(self.optimizer, LevenbergMarquardt):
                 logs = self.optimizer.logs
-                if logs['stop_training']:
-                    pb.write(Fore.YELLOW + "WARNING: LevenbergMarquardt suggests to stop the training now!" + Fore.RESET)
                 self.info['damping'] = [logs['damping']] * batch_size
                 self.info['num_attempts'] = [logs['attempts']] * batch_size
+                if logs['stop_training']:
+                    pb.write(Fore.YELLOW + "WARNING: LevenbergMarquardt suggests to stop the training now!" + Fore.RESET)
+                    stop_training = True
 
             self.update_metrics(x)
 
             # Post-step callbacks
             res = self.callbacks.invoke(self, "step_end", pb=pb, step=self.step_count, info=self.info, hist=self.hist)
-            if res.stop:
+            if res.stop or stop_training:
                 break
 
             pb.set_postfix({"loss": self.info["loss"].mean().item()})

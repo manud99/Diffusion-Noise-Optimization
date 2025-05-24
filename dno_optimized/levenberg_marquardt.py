@@ -174,6 +174,7 @@ class LevenbergMarquardt(Optimizer):
         Args:
             updates: The computed parameter updates.
         """
+        # Updating `self.flat_params` also updates `self._params`
         self.flat_params.add_(-self.learning_rate * updates)
 
     @torch.no_grad()
@@ -390,8 +391,8 @@ class LevenbergMarquardt(Optimizer):
             # Initialize during the first train step
             outputs = self.forward(next(iter(self._params)))
             residuals = torch.sqrt(self.loss_fn(outputs))
-            self._batch_size = residuals.shape[0]
-            self._num_residuals = residuals.numel()
+            self._batch_size = residuals.shape[0] # 1
+            self._num_residuals = residuals.numel() # 1
 
         assert self._batch_size
         assert self._num_residuals
@@ -405,7 +406,7 @@ class LevenbergMarquardt(Optimizer):
             param_indices = self.param_selection_strategy.select_parameters()
             num_params = param_indices.numel()
 
-        overdetermined = num_residuals >= num_params
+        overdetermined = num_residuals >= num_params # False
 
         if self.max_batch_size is not None and self.max_batch_size < batch_size:
             # reduced memory sliced computation

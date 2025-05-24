@@ -62,6 +62,14 @@ class LBFGSOptions:
     line_search_fn: LBFGSLineSearchFn | None = None
     max_iter: int = 20
 
+@dataclass
+class DampingStrategyOptions:
+    starting_value: float = field(default=1e-3, metadata={"help": "Starting value for linear search"})
+    dec_factor: float = field(default=0.1, metadata={"help": "Decrement factor on successful updates"})
+    inc_factor: float = field(default=10, metadata={"help": "Increment factor on unsuccessful updates"})
+    min_value: float = field(default=1e-10, metadata={"help": "Min damping factor"})
+    max_value: float = field(default=1e10, metadata={"help": "Max damping factor"})
+    damping_mode: str = field(default='standard', metadata={"help": "Damping strategy mode. Options: ['standard', 'adaptive', 'fletcher']"})
 
 @dataclass
 class LevenbergMarquardtOptions:
@@ -73,6 +81,7 @@ class LevenbergMarquardtOptions:
         default='qr',
         metadata={"help": "Method to solve the LSE constructed. Options: ['qr', 'cholesky', 'solve', 'lstsq']."},
     )
+    damping_strategy: DampingStrategyOptions = field(default_factory=DampingStrategyOptions, metadata={"help": "Damping strategy options"})
 
 @dataclass
 class AdamOptions:
