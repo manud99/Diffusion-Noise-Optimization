@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 
 
 class TensorboardCallback(Callback):
-    TB_GLOBAL_VARS = ["lr", "perturb_scale"]
-    TB_GROUP_VARS = ["loss", "loss_objective", "loss_diff", "loss_decorrelate", "diff_norm", "grad_norm", "num_attempts", "damping"]
+    TB_GLOBAL_VARS = ["lr", "perturb_scale", "num_attempts", "damping"]
+    TB_GROUP_VARS = ["loss", "loss_objective", "loss_diff", "loss_decorrelate", "diff_norm", "grad_norm"]
     # TB_HIST_VARS = ["x", "z"]
     TB_HIST_VARS = []
 
