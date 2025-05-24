@@ -2,11 +2,11 @@ import math
 from typing import Callable, TypedDict
 
 import torch
+from colorama import Fore
 from torch import Tensor
 from torch.optim.optimizer import ParamsT
 from torch_levenberg_marquardt.damping import StandardDampingStrategy
 from tqdm import tqdm
-from colorama import Fore
 
 from dno_optimized.callbacks.callback import CallbackList
 from dno_optimized.levenberg_marquardt import LevenbergMarquardt
@@ -23,9 +23,9 @@ def create_optimizer(
     print("Config:", config)
     match optimizer:
         case OptimizerType.Adam:
-            return torch.optim.Adam(params, lr=config.lr,
-                                    betas=config.adam.betas,
-                                    weight_decay=config.adam.weight_decay)
+            return torch.optim.Adam(
+                params, lr=config.lr, betas=config.adam.betas, weight_decay=config.adam.weight_decay
+            )
         case OptimizerType.LBFGS:
             return torch.optim.LBFGS(
                 params,
@@ -128,7 +128,9 @@ class DNO:
         # excluding the first dimension (batch size)
         self.dims = list(range(1, len(self.start_z.shape)))
 
-        self.optimizer = create_optimizer(self.conf.optimizer, [self.current_z], self.conf, model, self.compute_raw_loss)
+        self.optimizer = create_optimizer(
+            self.conf.optimizer, [self.current_z], self.conf, model, self.compute_raw_loss
+        )
         print(f"INFO: Using {self.conf.optimizer.name} optimizer with LR of {self.conf.lr:.2g}")
 
         self.lr_scheduler = []
@@ -137,7 +139,9 @@ class DNO:
             print(f"INFO: Using linear learning rate warmup over {conf.lr_warm_up_steps} steps")
         if conf.lr_decay_steps > 0:
             self.lr_scheduler.append(
-                lambda step: cosine_decay_scheduler(step, conf.lr_decay_steps, conf.num_opt_steps, decay_first=False)
+                lambda step: cosine_decay_scheduler(
+                    step, conf.lr_decay_steps, conf.num_opt_steps, decay_first=conf.decay_first
+                )
             )
             print(f"INFO: Using cosine learning rate decay over {conf.lr_decay_steps} steps")
 
@@ -216,6 +220,9 @@ class DNO:
                 if logs['stop_training']:
                     pb.write(Fore.YELLOW + "WARNING: LevenbergMarquardt suggests to stop the training now!" + Fore.RESET)
                     stop_training = True
+            else:
+                self.info["damping"] = [0] * batch_size
+                self.info["num_attempts"] = [0] * batch_size
 
             self.update_metrics(x)
 
@@ -242,7 +249,7 @@ class DNO:
             self, "train_end", num_steps=num_steps, batch_size=batch_size, hist=hist, state_dict=state_dict
         )
 
-        print() # New line after end of optimization
+        print()  # New line after end of optimization
         return state_dict
 
     def state_dict(self) -> DNOStateDict:
@@ -308,12 +315,14 @@ class DNO:
         assert loss.shape == (batch_size,)
 
         # Clone necessary if already on CPU since we modify loss in-place
-        if store_info: self.info["loss_objective"] = loss.detach().cpu().clone()
+        if store_info:
+            self.info["loss_objective"] = loss.detach().cpu().clone()
 
         # diff penalty
         loss_diff = (self.current_z - self.start_z).norm(p=2, dim=self.dims)
         assert loss_diff.shape == (batch_size,)
-        if store_info: self.info["loss_diff"] = loss_diff.detach().cpu()
+        if store_info:
+            self.info["loss_diff"] = loss_diff.detach().cpu()
         if self.conf.diff_penalty_scale > 0:
             loss += self.conf.diff_penalty_scale * loss_diff
 
@@ -323,11 +332,13 @@ class DNO:
             dim=self.conf.decorrelate_dim,
         )
         assert loss_decorrelate.shape == (batch_size,)
-        if store_info: self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
+        if store_info:
+            self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
         if self.conf.decorrelate_scale > 0:
             loss += self.conf.decorrelate_scale * loss_decorrelate
 
-        if store_info: self.info["loss"] = loss.detach().cpu().clone()
+        if store_info:
+            self.info["loss"] = loss.detach().cpu().clone()
         return loss
 
     def noise_perturbation(self, lr_frac, batch_size):

@@ -117,6 +117,7 @@ class DNOOptions:
         default=-1,
         metadata={"help": "Number of decay steps (if None, then set to num_opt_steps)"},
     )
+    decay_first: bool = False
     decorrelate_scale: float = field(default=1000, metadata={"help": "penalty for the decorrelation of the noise"})
     decorrelate_dim: int = field(
         default=3,

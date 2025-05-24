@@ -12,6 +12,7 @@ dependencies:
   - pip:
       # Regular pip dependencies
       - blobfile
+      - colorama
       - einops
       - ftfy
       - gdown

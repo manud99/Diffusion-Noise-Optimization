@@ -5,48 +5,10 @@ dno:
   num_opt_steps: 800
   optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
   lr: 5e-2 # Default
-  normalize_gradient: false
-  gradient_clip_val: 0.2
-  adam:
-    weight_decay: 0
-    betas: [0.9, 0.999]
 extra_callbacks:
+  - name: profiler
   - name: early_stopping
     args:
-      patience: 250
+      patience: 200
       min_improvement: 0
       abs_value: 1e-5
-  - name: profiler
-  # - name: generate_video
-  #   args:
-  #     schedule:
-  #       [
-  #         10,
-  #         20,
-  #         30,
-  #         40,
-  #         41,
-  #         42,
-  #         43,
-  #         44,
-  #         45,
-  #         46,
-  #         47,
-  #         48,
-  #         49,
-  #         50,
-  #         55,
-  #         60,
-  #         65,
-  #         70,
-  #         100,
-  #         150,
-  #         200,
-  #         250,
-  #         300,
-  #         400,
-  #         500,
-  #         600,
-  #         800,
-  #         1000,
-  #       ]
