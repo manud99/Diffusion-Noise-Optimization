@@ -649,6 +649,7 @@ def save_videos(
         if pb is not None:
             pb.update(1)
 
+    pb.close()
     abs_path = os.path.abspath(out_dir)
     if verbose:
         print(f"[Done] Results are at [{abs_path}]")

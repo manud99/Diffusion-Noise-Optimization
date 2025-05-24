@@ -1,11 +1,12 @@
 task: trajectory_editing
-experiment: "0524_lm_exploration"
-num_trials: 1
+experiment: "0524_lm_loss_aggregation"
+num_trials: 3
+seed: 20
 dataloader_num_workers: 2
 dno:
   num_opt_steps: 20
   optimizer: LevenbergMarquardt # Adam, SGD, LBFGS, LevenbergMarquardt, ...
-  lr: 0.1
+  lr: 0.5
   lr_warm_up_steps: 0 # 5
   lr_decay_steps: 0 # 10
   diff_penalty_scale: 2e-3 # default: 2e-3 for editing tasks (i.e. pose and trajectory editing) and 0 otherwise
@@ -13,22 +14,13 @@ dno:
   levenbergMarquardt:
     attempts_per_step: 10
     solve_method: lstsq
-callbacks:
+    loss_aggregation: sum # no influence at all (generated 4 times the same result)
+    damping_strategy:
+      conditional_stopping: true
+extra_callbacks:
   - name: tensorboard
     args:
       every_n_steps: 1
-  - name: early_stopping
-    args:
-      patience: 50
-      min_improvement: 1e-4
-      abs_value: 1e-5
-  - name: save_top_k
-extra_callbacks:
-  - name: early_stopping
-    args:
-      patience: 250
-      min_improvement: 0
-      abs_value: 1e-5
   - name: profiler
 #  - name: generate_video
 #    args:

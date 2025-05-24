@@ -40,6 +40,7 @@ def create_optimizer(
             raise NotImplementedError(optimizer)
         case OptimizerType.LevenbergMarquardt:
             assert config.levenbergMarquardt.solve_method in ['qr', 'cholesky', 'solve', 'lstsq']
+            assert config.levenbergMarquardt.loss_aggregation in ['sum', 'mean', 'min', 'max']
             dampingStrategy = StandardDampingStrategy(
                 starting_value=config.levenbergMarquardt.damping_strategy.starting_value,
                 dec_factor=config.levenbergMarquardt.damping_strategy.dec_factor,
@@ -47,6 +48,7 @@ def create_optimizer(
                 min_value=config.levenbergMarquardt.damping_strategy.min_value,
                 max_value=config.levenbergMarquardt.damping_strategy.max_value,
                 damping_mode=config.levenbergMarquardt.damping_strategy.damping_mode,
+                conditional_stopping=config.levenbergMarquardt.damping_strategy.conditional_stopping,
             )
             return LevenbergMarquardt(
                 params,
@@ -56,6 +58,7 @@ def create_optimizer(
                 damping_strategy=dampingStrategy,
                 attempts_per_step=config.levenbergMarquardt.attempts_per_step,
                 solve_method=config.levenbergMarquardt.solve_method,
+                loss_aggregation=config.levenbergMarquardt.loss_aggregation,
             )
         case _:
             raise ValueError(f"`{optimizer}` is not a valid optimizer")

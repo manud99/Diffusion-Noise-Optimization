@@ -70,6 +70,7 @@ class DampingStrategyOptions:
     min_value: float = field(default=1e-10, metadata={"help": "Min damping factor"})
     max_value: float = field(default=1e10, metadata={"help": "Max damping factor"})
     damping_mode: str = field(default='standard', metadata={"help": "Damping strategy mode. Options: ['standard', 'adaptive', 'fletcher']"})
+    conditional_stopping: bool = field(default=True, metadata={"help": "Conditional stopping condition"})
 
 @dataclass
 class LevenbergMarquardtOptions:
@@ -80,6 +81,10 @@ class LevenbergMarquardtOptions:
     solve_method: str = field(
         default='qr',
         metadata={"help": "Method to solve the LSE constructed. Options: ['qr', 'cholesky', 'solve', 'lstsq']."},
+    )
+    loss_aggregation: str = field(
+        default='sum',
+        metadata={"help": "Method to aggregate many loss values into a single float. Options: ['sum', 'min', 'max']"}
     )
     damping_strategy: DampingStrategyOptions = field(default_factory=DampingStrategyOptions, metadata={"help": "Damping strategy options"})
 

@@ -29,6 +29,7 @@ class LevenbergMarquardt(Optimizer):
         param_selection_strategy: ParamSelectionStrategy | None = None,
         use_vmap: bool = False,
         max_batch_size: int | None = None,
+        loss_aggregation: Literal['sum', 'min', 'max', 'mean'] = 'mean'
     ) -> None:
         """Initializes `LevenbergMarquardtModule` instance.
 
@@ -87,6 +88,7 @@ class LevenbergMarquardt(Optimizer):
         self.param_selection_strategy = param_selection_strategy
         self.use_vmap = use_vmap
         self.max_batch_size = max_batch_size
+        self.loss_aggregation = loss_aggregation
 
         # Extract trainable parameters
         self._params = params
@@ -370,7 +372,7 @@ class LevenbergMarquardt(Optimizer):
     def step(
         self,
         closure: Callable[[], Tensor],
-    ) -> tuple[Any, Tensor, bool, dict[str, Any]]:
+    ) -> None:
         """Performs a single training step.
 
         Args:
@@ -452,7 +454,8 @@ class LevenbergMarquardt(Optimizer):
                 new_outputs = self.forward(next(iter(self._params)))
                 new_loss = self.loss_fn(new_outputs)
 
-                if new_loss < loss:
+                # Possible aggregation options: sum, min, max
+                if self.aggregate_loss(new_loss) < self.aggregate_loss(loss):
                     # Accept the new model parameters and backup them
                     loss = new_loss
                     self.damping_strategy.on_successful_update(loss)
@@ -479,3 +482,15 @@ class LevenbergMarquardt(Optimizer):
             'loss': loss,
             'stop_training': stop_training,
         }
+
+    def aggregate_loss(self, loss):
+        match self.loss_aggregation:
+            case 'sum':
+                return loss.sum()
+            case 'mean':
+                return loss.mean()
+            case 'min':
+                return loss.min()
+            case 'max':
+                return loss.max()
+        raise NotImplementedError("levenberg_marquardt only support loss_aggregation in ['sum', 'mean', 'min', 'max']")
