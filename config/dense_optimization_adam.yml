@@ -1,13 +1,10 @@
-task: trajectory_editing
+task: dense_optimization
 num_ode_steps: 10
 gradient_checkpoint: False
 dno:
   num_opt_steps: 800
   optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
   lr: 5e-2 # Default
-  adam:
-    weight_decay: 0.01
-    betas: [0.9, 0.999]
 callbacks:
   - name: tensorboard
     args:
@@ -17,4 +14,4 @@ callbacks:
   #     patience: 50
   #     min_improvement: 1e-4
   #     abs_value: 1e-5
-  - name: save_top_k
+  # - name: save_top_k
