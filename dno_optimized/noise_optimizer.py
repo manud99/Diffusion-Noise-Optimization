@@ -152,6 +152,8 @@ class DNO:
         if self.conf.gradient_clip_val is not None:
             print(f"INFO: Gradient clip value: {self.conf.gradient_clip_val:.3f}")
 
+        print(f"INFO: Using decorrelate_scale {self.conf.decorrelate_scale} and diff_penalty_scale {self.conf.diff_penalty_scale}")
+
         self.step_count = 0
 
         # Optimizer closure running variables
@@ -310,7 +312,7 @@ class DNO:
 
         return loss_agg
 
-    def compute_raw_loss(self, x: torch.Tensor, batch_size: int | None = None, store_info: bool = True):
+    def compute_raw_loss(self, x: torch.Tensor, batch_size: int | None = None):
         if batch_size is None:
             batch_size = self.batch_size
 
@@ -318,14 +320,12 @@ class DNO:
         assert loss.shape == (batch_size,)
 
         # Clone necessary if already on CPU since we modify loss in-place
-        if store_info:
-            self.info["loss_objective"] = loss.detach().cpu().clone()
+        self.info["loss_objective"] = loss.detach().cpu().clone()
 
         # diff penalty
         loss_diff = (self.current_z - self.start_z).norm(p=2, dim=self.dims)
         assert loss_diff.shape == (batch_size,)
-        if store_info:
-            self.info["loss_diff"] = loss_diff.detach().cpu()
+        self.info["loss_diff"] = loss_diff.detach().cpu()
         if self.conf.diff_penalty_scale > 0:
             loss += self.conf.diff_penalty_scale * loss_diff
 
@@ -335,13 +335,11 @@ class DNO:
             dim=self.conf.decorrelate_dim,
         )
         assert loss_decorrelate.shape == (batch_size,)
-        if store_info:
-            self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
+        self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
         if self.conf.decorrelate_scale > 0:
             loss += self.conf.decorrelate_scale * loss_decorrelate
 
-        if store_info:
-            self.info["loss"] = loss.detach().cpu().clone()
+        self.info["loss"] = loss.detach().cpu().clone()
         return loss
 
     def noise_perturbation(self, lr_frac, batch_size):

@@ -175,9 +175,9 @@ class SaveTopKCallback(Callback):
             self.update_top_model(worst_model_idx, step, value)
 
         # Check if we need to flush
-        if (step % self.flush_every) == 0:
-            self.flush()
+        # if (step % self.flush_every) == 0:
+        #     self.flush()
 
-    @override
-    def on_train_end(self, num_steps: int, batch_size: int, hist: list[DNOInfoDict], state_dict: DNOStateDict):
-        self.flush()
+    # @override
+    # def on_train_end(self, num_steps: int, batch_size: int, hist: list[DNOInfoDict], state_dict: DNOStateDict):
+    #     self.flush()
