@@ -150,6 +150,7 @@ class GenerateOptions:
     task: DNOTask = DNOTask.trajectory_editing
     model_path: str = "./save/mdm_avg_dno/model000500000_avg.pt"
     start_time: str = datetime.now().strftime("%y%m%d-%H%M%S")
+    experiment: str | None = field(default=None, metadata={ "help": "Name of the experiment, which defined the folder name" })
 
     ## GENERATE
     text_prompt: str = "a person is jumping"
@@ -241,6 +242,6 @@ class GenerateOptions:
         text_prompt_safe = re.sub(r"[^\w\d_]", "", text_prompt_safe)  # Remove any non-word characters
         return (
             Path(self.model_path).parent
-            / f"samples_{self.niter}_seed{self.seed}_{text_prompt_safe}"
+            / (f"{self.experiment}_{text_prompt_safe}" if self.experiment else f"samples_{self.niter}_seed{self.seed}_{text_prompt_safe}")
             / f"{self.task.name}_{self.start_time}_{self.dno.optimizer.name}"
         )

@@ -1,4 +1,5 @@
 task: trajectory_editing
+experiment: "0524_lm_exploration"
 num_ode_steps: 10
 gradient_checkpoint: False
 num_trials: 1
@@ -9,14 +10,19 @@ dno:
   lr: 0.5
   levenbergMarquardt:
     attempts_per_step: 10
-callbacks:
-  - name: tensorboard
-    args:
-      every_n_steps: 10
-      enable_profiler: False
+extra_callbacks:
   - name: early_stopping
     args:
-      patience: 50
-      min_improvement: 1e-4
+      patience: 250
+      min_improvement: 0
       abs_value: 1e-5
-  - name: save_top_k
+  - name: profiler
+  - name: generate_video
+    args:
+     schedule:
+       [
+         2,
+         4,
+         6,
+         8,
+       ]

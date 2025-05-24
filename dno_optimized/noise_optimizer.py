@@ -199,6 +199,8 @@ class DNO:
             pb.set_postfix({"loss": self.info["loss"].mean().item()})
             pb.update(1)
 
+        pb.close()
+
         # Check for early stopping
         if self.step_count < num_steps:
             print(f"INFO: Stopping optimization early at step {self.step_count}/{num_steps}")
