@@ -21,7 +21,9 @@ def create_optimizer(
     print("Config:", config)
     match optimizer:
         case OptimizerType.Adam:
-            return torch.optim.Adam(params, lr=config.lr)
+            return torch.optim.Adam(params, lr=config.lr,
+                                    betas=config.adam.betas,
+                                    weight_decay=config.adam.weight_decay)
         case OptimizerType.LBFGS:
             return torch.optim.LBFGS(
                 params,

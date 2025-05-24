@@ -72,6 +72,20 @@ class LevenbergMarquardtOptions:
         },
     )
 
+@dataclass
+class AdamOptions:
+    weight_decay: float = field(
+        default=0,
+        metadata={
+            "help": "weight decay"
+        }
+    )
+    betas: tuple[float,float] = field(
+        default=(0.9, 0.999),
+        metadata={
+            "help": "Beta range"
+        }
+    )
 
 @dataclass
 class DNOOptions:
@@ -104,6 +118,7 @@ class DNOOptions:
     levenbergMarquardt: LevenbergMarquardtOptions = field(
         default_factory=LevenbergMarquardtOptions, metadata={"help": "Options for Levenberg Marquardt optimizer"}
     )
+    adam: AdamOptions = field(default_factory=AdamOptions, metadata={"help": "Options for Adam optimizer"})
 
     enable_profiler: bool = field(default=False, metadata={"help": "Enable profiler"})
 

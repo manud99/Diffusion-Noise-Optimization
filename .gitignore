@@ -140,3 +140,4 @@ runscripts/
 environment_gmd_old.yml
 .Trash-1000/
 training.py
+slurm-*.out
