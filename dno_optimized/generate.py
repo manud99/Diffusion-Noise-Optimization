@@ -357,7 +357,8 @@ def prepare_optimization(
     #### Noise Optimization Config ####
     is_editing_task = not is_noise_init
     noise_opt_conf: DNOOptions = args.dno
-    noise_opt_conf.diff_penalty_scale = 2e-3 if is_editing_task else 0
+    if noise_opt_conf.diff_penalty_scale is None:
+        noise_opt_conf.diff_penalty_scale = 2e-3 if is_editing_task else 0
     start_from_noise = is_noise_init
 
     # Repeat target to match num_trials

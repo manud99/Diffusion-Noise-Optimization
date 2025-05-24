@@ -25,7 +25,7 @@ class LevenbergMarquardt(Optimizer):
         damping_strategy: DampingStrategy | None = None,
         learning_rate: float = 1.0,
         attempts_per_step: int = 10,
-        solve_method: Literal['qr', 'cholesky', 'solve'] = 'qr',
+        solve_method: Literal['qr', 'cholesky', 'solve', 'lstsq'] = 'lstsq',
         param_selection_strategy: ParamSelectionStrategy | None = None,
         use_vmap: bool = False,
         max_batch_size: int | None = None,
@@ -113,6 +113,8 @@ class LevenbergMarquardt(Optimizer):
         self._batch_size: int | None = None
         self._num_residuals: int | None = None
 
+        self.logs = {}
+
     @torch.no_grad()
     def backup_parameters(self) -> None:
         """Backs up the current model parameters into a separate tensor."""
@@ -157,6 +159,8 @@ class LevenbergMarquardt(Optimizer):
             return torch.linalg.solve_triangular(L.transpose(-2, -1), y, upper=True)
         elif self.solve_method == 'solve':
             return torch.linalg.solve(matrix, rhs)
+        elif self.solve_method == 'lstsq':
+            return torch.linalg.lstsq(matrix, rhs).solution
         else:
             raise ValueError(
                 f"Invalid solve_method '{self.solve_method}'. "
@@ -327,6 +331,40 @@ class LevenbergMarquardt(Optimizer):
         rhs = residuals  # rhs = residuals
         return J, JJ, rhs, outputs
 
+    def try_update_parameters(self, J, JJ, overdetermined, param_indices, rhs):
+        # Try to update the parameters
+        try:
+            # Apply damping to the Gauss-Newton Hessian approximation
+            JJ_damped = self.damping_strategy.apply(JJ)
+
+            # Compute the updates:
+            # - Overdetermined: updates = (J' * J + damping)^-1 * J'*residuals
+            # - Underdetermined: updates = J' * (J * J' + damping)^-1 * residuals
+            updates = self._solve(JJ_damped, rhs)
+
+            if not overdetermined:
+                assert J is not None
+                updates = J.t().matmul(updates)
+
+            updates = updates.view(-1)
+
+            if param_indices is not None:
+                full_updates = torch.zeros(
+                    self._num_params,
+                    device=updates.device,
+                    dtype=updates.dtype,
+                )
+                full_updates[param_indices] = updates
+                updates = full_updates
+
+            # Check if updates are finite
+            if torch.all(torch.isfinite(updates)):
+                self._apply_updates(updates)
+                return True
+        except Exception as e:
+            print(f'[ERROR] levenberg_marquardt: An exception occurred: {e}')
+        return False
+
     @torch.no_grad()
     def step(
         self,
@@ -406,40 +444,7 @@ class LevenbergMarquardt(Optimizer):
         self.damping_strategy.initialize_step(loss)
 
         for attempt in range(self.attempts_per_step):
-            params_updated = False
-
-            # Try to update the parameters
-            try:
-                # Apply damping to the Gauss-Newton Hessian approximation
-                JJ_damped = self.damping_strategy.apply(JJ)
-
-                # Compute the updates:
-                # - Overdetermined: updates = (J' * J + damping)^-1 * J'*residuals
-                # - Underdetermined: updates = J' * (J * J' + damping)^-1 * residuals
-                updates = self._solve(JJ_damped, rhs)
-
-                if not overdetermined:
-                    assert J is not None
-                    updates = J.t().matmul(updates)
-
-                updates = updates.view(-1)
-
-                if param_indices is not None:
-                    full_updates = torch.zeros(
-                        self._num_params,
-                        device=updates.device,
-                        dtype=updates.dtype,
-                    )
-                    full_updates[param_indices] = updates
-                    updates = full_updates
-
-                # Check if updates are finite
-                if torch.all(torch.isfinite(updates)):
-                    params_updated = True
-                    self._apply_updates(updates)
-
-            except Exception as e:
-                print(f'[ERROR] levenberg_marquardt: An exception occurred: {e}')
+            params_updated = self.try_update_parameters(J, JJ, overdetermined, param_indices, rhs)
 
             if params_updated:
                 # Compute the new loss value
@@ -467,9 +472,9 @@ class LevenbergMarquardt(Optimizer):
             if stop_training or stop_attempts:
                 break
 
-        logs = {
+        self.logs = {
             'damping': self.damping_strategy.get_current_damping(),
             'attempts': attempt,
+            'loss': loss,
+            'stop_training': stop_training,
         }
-
-        return outputs, loss, stop_training, logs

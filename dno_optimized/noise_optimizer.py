@@ -5,6 +5,7 @@ import torch
 from torch import Tensor
 from torch.optim.optimizer import ParamsT
 from tqdm import tqdm
+from colorama import Fore
 
 from dno_optimized.callbacks.callback import CallbackList
 from dno_optimized.levenberg_marquardt import LevenbergMarquardt
@@ -37,12 +38,14 @@ def create_optimizer(
         case OptimizerType.GaussNewton:
             raise NotImplementedError(optimizer)
         case OptimizerType.LevenbergMarquardt:
+            assert config.levenbergMarquardt.solve_method in ['qr', 'cholesky', 'solve', 'lstsq']
             return LevenbergMarquardt(
                 params,
                 model=model,
                 loss_fn=criterion,
                 learning_rate=config.lr,
                 attempts_per_step=config.levenbergMarquardt.attempts_per_step,
+                solve_method=config.levenbergMarquardt.solve_method,
             )
         case _:
             raise ValueError(f"`{optimizer}` is not a valid optimizer")
@@ -62,6 +65,8 @@ class DNOInfoDict(TypedDict):
     diff_norm: torch.Tensor
     z: torch.Tensor
     x: torch.Tensor
+    damping: list[float]
+    num_attempts: list[int]
 
 
 class DNOStateDict(TypedDict):
@@ -84,6 +89,8 @@ def default_info() -> DNOInfoDict:
         "diff_norm": torch.empty([]),
         "x": torch.empty([]),
         "z": torch.empty([]),
+        "damping": [],
+        "num_attempts": [],
     }
 
 
@@ -111,7 +118,7 @@ class DNO:
         # excluding the first dimension (batch size)
         self.dims = list(range(1, len(self.start_z.shape)))
 
-        self.optimizer = create_optimizer(self.conf.optimizer, [self.current_z], self.conf, model, criterion)
+        self.optimizer = create_optimizer(self.conf.optimizer, [self.current_z], self.conf, model, self.compute_raw_loss)
         print(f"INFO: Using {self.conf.optimizer.name} optimizer with LR of {self.conf.lr:.2g}")
 
         self.lr_scheduler = []
@@ -146,6 +153,7 @@ class DNO:
         self.callbacks = callbacks or CallbackList()
         print("INFO: Using the following callbacks:")
         print(*[f"- {cb}" for cb in self.callbacks], sep="\n")
+        print("====================================\n")
 
     @property
     def batch_size(self):
@@ -158,7 +166,7 @@ class DNO:
         if num_steps is None:
             num_steps = self.conf.num_opt_steps
 
-        batch_size = self.start_z.shape[0]
+        batch_size = self.batch_size
 
         self.step_count = 0
         self.callbacks.invoke(self, "train_begin", num_steps=num_steps, batch_size=batch_size)
@@ -189,6 +197,14 @@ class DNO:
             self.lr_frac = self.step_schedulers(batch_size=batch_size)
             self.noise_perturbation(self.lr_frac, batch_size=batch_size)
 
+            # Merge logs from LevenbergMarquardt with our info object
+            if isinstance(self.optimizer, LevenbergMarquardt):
+                logs = self.optimizer.logs
+                if logs['stop_training']:
+                    pb.write(Fore.YELLOW + "WARNING: LevenbergMarquardt suggests to stop the training now!" + Fore.RESET)
+                self.info['damping'] = [logs['damping']] * batch_size
+                self.info['num_attempts'] = [logs['attempts']] * batch_size
+
             self.update_metrics(x)
 
             # Post-step callbacks
@@ -214,6 +230,7 @@ class DNO:
             self, "train_end", num_steps=num_steps, batch_size=batch_size, hist=hist, state_dict=state_dict
         )
 
+        print() # New line after end of optimization
         return state_dict
 
     def state_dict(self) -> DNOStateDict:
@@ -242,40 +259,14 @@ class DNO:
     def set_lr(self, lr):
         for i, param_group in enumerate(self.optimizer.param_groups):
             param_group["lr"] = lr
+        if isinstance(self.optimizer, LevenbergMarquardt):
+            self.optimizer.learning_rate = lr
 
     def compute_loss(self, x: torch.Tensor, batch_size: int) -> torch.Tensor:
         self.info = default_info()
         self.info["step"] = [self.step_count] * batch_size
 
-        # [batch_size,]
-        loss = self.criterion(x)
-        assert loss.shape == (batch_size,)
-        # Clone necessary if already on CPU since we modify loss in-place
-        self.info["loss_objective"] = loss.detach().cpu().clone()
-
-        # diff penalty
-        if self.conf.diff_penalty_scale > 0:
-            # [batch_size,]
-            loss_diff = (self.current_z - self.start_z).norm(p=2, dim=self.dims)
-            assert loss_diff.shape == (batch_size,)
-            loss += self.conf.diff_penalty_scale * loss_diff
-            self.info["loss_diff"] = loss_diff.detach().cpu()
-        else:
-            self.info["loss_diff"] = torch.tensor([0] * batch_size, device="cpu")
-
-        # decorrelate
-        if self.conf.decorrelate_scale > 0:
-            loss_decorrelate = noise_regularize_1d(
-                self.current_z,
-                dim=self.conf.decorrelate_dim,
-            )
-            assert loss_decorrelate.shape == (batch_size,)
-            loss += self.conf.decorrelate_scale * loss_decorrelate
-            self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
-        else:
-            self.info["loss_decorrelate"] = torch.tensor([0] * batch_size, device="cpu")
-
-        self.info["loss"] = loss.detach().cpu().clone()
+        loss = self.compute_raw_loss(x, batch_size)
 
         # Aggregate over batch: sum, mean, or other? e.g. max? min?
         # Original DNO: sum
@@ -296,6 +287,36 @@ class DNO:
             torch.nn.utils.clip_grad_norm_(self.current_z, self.conf.gradient_clip_val, norm_type=2)
 
         return loss_agg
+
+    def compute_raw_loss(self, x: torch.Tensor, batch_size: int | None = None, store_info: bool = True):
+        if batch_size is None:
+            batch_size = self.batch_size
+
+        loss = self.criterion(x)
+        assert loss.shape == (batch_size,)
+
+        # Clone necessary if already on CPU since we modify loss in-place
+        if store_info: self.info["loss_objective"] = loss.detach().cpu().clone()
+
+        # diff penalty
+        loss_diff = (self.current_z - self.start_z).norm(p=2, dim=self.dims)
+        assert loss_diff.shape == (batch_size,)
+        if store_info: self.info["loss_diff"] = loss_diff.detach().cpu()
+        if self.conf.diff_penalty_scale > 0:
+            loss += self.conf.diff_penalty_scale * loss_diff
+
+        # decorrelation loss
+        loss_decorrelate = noise_regularize_1d(
+            self.current_z,
+            dim=self.conf.decorrelate_dim,
+        )
+        assert loss_decorrelate.shape == (batch_size,)
+        if store_info: self.info["loss_decorrelate"] = loss_decorrelate.detach().cpu()
+        if self.conf.decorrelate_scale > 0:
+            loss += self.conf.decorrelate_scale * loss_decorrelate
+
+        if store_info: self.info["loss"] = loss.detach().cpu().clone()
+        return loss
 
     def noise_perturbation(self, lr_frac, batch_size):
         # noise perturbation

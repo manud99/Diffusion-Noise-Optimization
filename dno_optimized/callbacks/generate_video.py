@@ -37,7 +37,7 @@ class GenerateVideoCallback(Callback):
             )
             return
 
-        self.progress.write(f"Step {step}: Saving intermediate video")
+        self.progress.write(f"Saving intermediate video in step {step}")
 
         # Get current output
         out = self.dno.state_dict()

@@ -67,9 +67,11 @@ class LBFGSOptions:
 class LevenbergMarquardtOptions:
     attempts_per_step: int = field(
         default=10,
-        metadata={
-            "help": "Number of attempts per step (1 for editing, 2 for refinement, can go further for better results)"
-        },
+        metadata={"help": "Number of attempts per step (1 for editing, 2 for refinement, can go further for better results)"},
+    )
+    solve_method: str = field(
+        default='qr',
+        metadata={"help": "Method to solve the LSE constructed. Options: ['qr', 'cholesky', 'solve', 'lstsq']."},
     )
 
 @dataclass
@@ -97,9 +99,9 @@ class DNOOptions:
     )
     lr: float = field(default=5e-2, metadata={"help": "Learning rate"})
     perturb_scale: float = field(default=0, metadata={"help": "scale of the noise perturbation"})
-    diff_penalty_scale: float = field(
-        default=0,
-        metadata={"help": "penalty for the difference between the final z and the initial z"},
+    diff_penalty_scale: float | None = field(
+        default=None,
+        metadata={"help": "penalty for the difference between the final z and the initial z. Default is 2e-3 for editing tasks (i.e. pose and trajectory editing) and 0 otherwise."},
     )
     lr_warm_up_steps: int = field(default=50, metadata={"help": "Number of warm-up steps for the learning rate"})
     lr_decay_steps: int = field(
@@ -242,6 +244,6 @@ class GenerateOptions:
         text_prompt_safe = re.sub(r"[^\w\d_]", "", text_prompt_safe)  # Remove any non-word characters
         return (
             Path(self.model_path).parent
-            / (f"{self.experiment}_{text_prompt_safe}" if self.experiment else f"samples_{self.niter}_seed{self.seed}_{text_prompt_safe}")
+            / (self.experiment if self.experiment else f"samples_{self.niter}_seed{self.seed}_{text_prompt_safe}")
             / f"{self.task.name}_{self.start_time}_{self.dno.optimizer.name}"
         )

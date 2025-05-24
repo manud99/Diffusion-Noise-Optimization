@@ -1,15 +1,18 @@
 task: trajectory_editing
 experiment: "0524_lm_exploration"
-num_ode_steps: 10
-gradient_checkpoint: False
 num_trials: 1
 dataloader_num_workers: 2
 dno:
-  num_opt_steps: 10
+  num_opt_steps: 20
   optimizer: LevenbergMarquardt # Adam, SGD, LBFGS, LevenbergMarquardt, ...
   lr: 0.5
+  lr_warm_up_steps: 0 # 5
+  lr_decay_steps: 0 # 10
+  diff_penalty_scale: 2e-3 # default: 2e-3 for editing tasks (i.e. pose and trajectory editing) and 0 otherwise
+  decorrelate_scale: 50 # default 1000 (way too big for LM)
   levenbergMarquardt:
     attempts_per_step: 10
+    solve_method: lstsq
 callbacks:
   - name: tensorboard
     args:
@@ -35,4 +38,9 @@ extra_callbacks:
          4,
          6,
          8,
+         10,
+         12,
+         14,
+         16,
+         18
        ]
