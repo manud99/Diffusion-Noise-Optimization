@@ -196,7 +196,6 @@ def generate(config_file: str, dot_list=None):
 
 
 def load_dataset(args, n_frames):
-    pprint(f"args: {args}")
     conf = DatasetConfig(
         name=args.dataset,
         batch_size=args.batch_size,

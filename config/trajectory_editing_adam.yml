@@ -8,7 +8,7 @@ dno:
   normalize_gradient: false
   gradient_clip_val: 0.2
   adam:
-    weight_decay: 0.01
+    weight_decay: 0
     betas: [0.9, 0.999]
 extra_callbacks:
   - name: early_stopping
