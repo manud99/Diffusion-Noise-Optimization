@@ -72,9 +72,6 @@ def create_app(results, base_path):
     @app.route("/video/<path:filename>")
     def video(filename):
         # Serve video files from the results directory
-        file = Path(base_path) / filename
-        print(f"Serving video: {base_path}/{filename} -> {file.is_file()}")
-
         return send_from_directory(base_path, filename)
 
     return app
