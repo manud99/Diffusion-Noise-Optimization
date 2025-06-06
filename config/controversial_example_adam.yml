@@ -1,0 +1,16 @@
+task: trajectory_editing
+experiment: controversial_example
+text_prompt: a person is jumping
+seed: 24
+dno:
+  num_opt_steps: 800
+  optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
+  lr: 5e-2 # Default
+  decorrelate_scale: 1000 # Default for Adam
+extra_callbacks:
+  - name: profiler
+  - name: early_stopping
+    args:
+      patience: 200
+      min_improvement: 0
+      abs_value: 1e-5

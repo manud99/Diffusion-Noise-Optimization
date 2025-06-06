@@ -1,0 +1,19 @@
+task: trajectory_editing
+experiment: controversial_example
+text_prompt: a person is jumping
+seed: 24
+dno:
+  num_opt_steps: 20
+  lr: 0.5
+  diff_penalty_scale: 0.0 # default 2e-3
+  lr_warm_up_steps: 0 # default 50
+  lr_decay_steps: 0 # default -1
+  decorrelate_scale: 1.0 # default 1000 (too big for LM)
+  optimizer: LevenbergMarquardt
+  levenbergMarquardt:
+    solve_method: lstsq # default qr
+extra_callbacks:
+  - name: tensorboard
+    args:
+      every_n_steps: 1
+  - name: profiler
