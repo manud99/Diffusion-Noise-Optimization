@@ -1,0 +1,19 @@
+task: pose_editing
+text_prompt: a person is jumping
+dno:
+  optimizer: LBFGS
+  num_opt_steps: 30
+  lr: 0.5
+  lr_warm_up_steps: 0
+  lr_decay_steps: 10
+  decorrelate_scale: 0.1
+  normalize_gradient: false
+  gradient_clip_val: 15.0
+  lbfgs:
+    history_size: 20
+    line_search_fn: strong_wolfe
+    max_iter: 5
+extra_callbacks:
+- name: tensorboard
+  args:
+    every_n_steps: 1

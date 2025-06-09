@@ -1,17 +1,13 @@
 task: pose_editing
-num_ode_steps: 10
-gradient_checkpoint: False
+text_prompt: a person is jumping
 dno:
+  optimizer: Adam
   num_opt_steps: 800
-  optimizer: Adam # Adam, SGD, LBFGS, LevenbergMarquardt, ...
-  lr: 5e-2 # Default
+  lr: 0.01
+  lr_warm_up_steps: 50
+  lr_decay_steps: 500
+  decorrelate_scale: 100.0
 callbacks:
   - name: tensorboard
     args:
       every_n_steps: 10
-  # - name: early_stopping
-  #   args:
-  #     patience: 50
-  #     min_improvement: 1e-4
-  #     abs_value: 1e-5
-  # - name: save_top_k

@@ -1,0 +1,19 @@
+task: pose_editing
+text_prompt: a person is jumping
+dno:
+  optimizer: LevenbergMarquardt
+  num_opt_steps: 20
+  lr: 0.5
+  lr_warm_up_steps: 0
+  lr_decay_steps: 0
+  decorrelate_scale: 0.0
+  levenbergMarquardt:
+    attempts_per_step: 10
+    solve_method: lstsq
+    damping_strategy:
+      damping_mode: adaptive
+      conditional_stopping: false
+callbacks:
+  - name: tensorboard
+    args:
+      every_n_steps: 1
