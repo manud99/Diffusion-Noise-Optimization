@@ -6,4 +6,5 @@ fi
 mkdir -p save
 wget -O save/mdm_avg_dno.zip https://polybox.ethz.ch/index.php/s/ZiXkIzdIsspK2Lt/download
 unzip save/mdm_avg_dno.zip -d save/
+mv save/DNO save/mdm_avg_dno
 rm save/mdm_avg_dno.zip
