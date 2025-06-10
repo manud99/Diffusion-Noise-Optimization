@@ -95,20 +95,18 @@ To analyze the videos and results of many runs in a folder, e.g. `save/mdm_avg_d
 python -m dno_optimized.analyze save/mdm_avg_dno/trajectory_editing
 ```
 
-Open http://localhost:8000 in your browser to see the videos and results in a table.
-To extract the results open http://localhost:8000/results where the results are nicely formatted in a table that can be copied to a spreadsheet.
+Open http://localhost:8000 in your browser to see the videos and results in a table. To extract the results open
+http://localhost:8000/results where the results are nicely formatted in a table that can be copied to a spreadsheet.
 
 ### 📑 Generate results of our analysis
 
-To generate the results of our analysis in section 4.4 and 4.5 of our report, run the following batch scripts using slurm. Please be aware that this will take up to one day to finish if executed sequentially.
+To generate the results of our analysis in section 4.4 and 4.5 of our report, run the following batch scripts using slurm. Please be aware that this will take up to 12 hours to finish if executed sequentially.
 
 ```bash
 sbatch ./generate_adam.sh
 sbatch ./generate_lbfgs.sh
 sbatch ./generate_levenberg_marquardt.sh
 ```
-Open http://localhost:8000 in your browser to see the videos and results in a table. To extract the results open
-http://localhost:8000/results where the results are nicely formatted in a table that can be copied to a spreadsheet.
 
 ## ⚡ Controversial Example
 
