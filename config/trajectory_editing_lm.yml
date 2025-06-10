@@ -1,0 +1,24 @@
+task: trajectory_editing
+experiment: 0524_lm_damping_strategy
+num_trials: 3
+seed: 27
+dataloader_num_workers: 2
+dno:
+  optimizer: LevenbergMarquardt
+  num_opt_steps: 20
+  lr: 0.5
+  lr_warm_up_steps: 0 # Disabled
+  lr_decay_steps: 0 # Disabled
+  diff_penalty_scale: 2e-3 # Default: 2e-3 for editing tasks (i.e. pose and trajectory editing) and 0 otherwise
+  decorrelate_scale: 20 # Default of 1000 is too big for Levenberg-Marquardt
+  levenbergMarquardt:
+    attempts_per_step: 10
+    solve_method: lstsq # Options: qr, cholesky, solve, lstsq
+    damping_strategy:
+      conditional_stopping: true
+      damping_mode: standard # Options: standard, adaptive, fletcher
+extra_callbacks:
+  - name: tensorboard
+    args:
+      every_n_steps: 1
+  - name: profiler
