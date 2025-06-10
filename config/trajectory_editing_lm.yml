@@ -1,8 +1,7 @@
 task: trajectory_editing
-experiment: 0524_lm_damping_strategy
-num_trials: 3
-seed: 27
-dataloader_num_workers: 2
+experiment: trajectory_editing
+text_prompt: a person is jumping
+seed: 20
 dno:
   optimizer: LevenbergMarquardt
   num_opt_steps: 20

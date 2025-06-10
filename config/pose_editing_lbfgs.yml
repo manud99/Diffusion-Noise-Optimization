@@ -1,5 +1,7 @@
 task: pose_editing
+experiment: pose_editing
 text_prompt: a person is jumping
+seed: 20
 dno:
   optimizer: LBFGS
   num_opt_steps: 30

@@ -1,0 +1,54 @@
+task: trajectory_editing
+experiment: trajectory_editing
+text_prompt: a person is jumping
+seed: 20
+num_ode_steps: 10
+num_trials: 3 # batch size = number of videos produced
+dno:
+  optimizer: LevenbergMarquardt
+  num_opt_steps: 20
+  lr: 0.5
+  perturb_scale: 0.0
+  lr_warm_up_steps: 0 # Default: 50
+  lr_decay_steps: 0 # Default: -1, which sets it to num_opt_steps
+  decay_first: false
+  decorrelate_scale: 20 # Default of 1000 is too big for Levenberg-Marquardt and L-BFGS
+  decorrelate_dim: 3
+  diff_penalty_scale: null # if null, it uses the default for the respective task
+  normalize_gradient: true
+  gradient_clip_val: null
+  enable_profiler: false # enable TensorBoard profiler
+  adam:
+    weight_decay: 0.0
+    betas:
+    - 0.9
+    - 0.999
+  lbfgs:
+    history_size: 10
+    line_search_fn: strong_wolfe # Options: strong_wolfe or null
+    max_iter: 20
+  levenbergMarquardt:
+    attempts_per_step: 10
+    solve_method: solve # Options: qr, cholesky, solve, lstsq
+    loss_aggregation: sum
+    damping_strategy:
+      starting_value: 0.001
+      dec_factor: 0.1
+      inc_factor: 10.0
+      min_value: 1.0e-10
+      max_value: 1.0e10
+      damping_mode: standard # Options: standard, adaptive, fletcher
+      conditional_stopping: false
+extra_callbacks:
+  - name: tensorboard
+    args:
+      every_n_steps: 1
+  - name: early_stopping
+    args:
+      patience: 50
+      min_improvement: 0.0001
+      abs_value: 1.0e-05
+  - name: profiler
+  - name: generate_video
+    args:
+      schedule: [5, 10, 15]
