@@ -1,7 +1,6 @@
 import os
 import sys
 from argparse import ArgumentParser
-from pprint import pprint
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +19,7 @@ from sample import dno_helper
 from sample.condition import CondKeyLocationsLoss
 from sample.gen_dno import ddim_invert, ddim_loop_with_gradient
 from utils import dist_util
-from utils.callback_util import callbacks_from_options
+from dno_optimized.callback_util import callbacks_from_options
 from utils.dist_util import setup_dist
 from utils.fixseed import fixseed
 from utils.model_util import create_gaussian_diffusion, create_model_and_diffusion, load_model_wo_clip
