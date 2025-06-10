@@ -25,8 +25,6 @@ bash prepare/download_t2m_evaluators.sh
 bash prepare/download_mdm_model.sh
 ```
 
-TODO: Download some file from polybox ...
-
 Next, clone [HumanML3D](https://github.com/EricGuo5513/HumanML3D.git) and copy the data dir to our repository:
 
 ```shell
