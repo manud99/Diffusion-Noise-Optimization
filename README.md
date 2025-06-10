@@ -71,6 +71,24 @@ python -m dno_optimized.generate config/trajectory_editing_adam.yml text_prompt=
 
 In `config/full_config.yml` you can find a list with the most useful configuration options.
 
+### 📈 TensorBoard
+
+To analyze the training process, you can use TensorBoard. Start it by running:
+
+```bash
+tensorboard --logdir_spec save/mdm_avg_dno
+```
+### 📊 Analyze results
+
+To analyze the videos and results of many runs in a folder, e.g. `save/mdm_avg_dno/trajectory_editing`, run the following command:
+
+```bash
+python -m dno_optimized.analyze save/mdm_avg_dno/trajectory_editing
+```
+
+Open http://localhost:8000 in your browser to see the videos and results in a table.
+To extract the results open http://localhost:8000/results where the results are nicely formatted in a table that can be copied to a spreadsheet.
+
 ## ⚡ Controversial Example
 
 To produce the results for the controversial example discussed in section 4.5 our our report, run the following commands:
