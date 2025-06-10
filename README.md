@@ -10,7 +10,7 @@ First, clone this repository. Then, create and activate a conda environment usin
 
 ```bash
 conda env create -f environment.yml
-conda activate dno
+conda activate dno-env
 ```
 
 ### 📥 Download dependencies and pretrained models
@@ -21,7 +21,10 @@ Let's download the necessary dependencies for the project:
 bash prepare/download_smpl_files.sh
 bash prepare/download_glove.sh
 bash prepare/download_t2m_evaluators.sh
+bash prepare/download_mdm_model.sh
 ```
+
+TODO: Download some file from polybox ...
 
 Next, clone [HumanML3D](https://github.com/EricGuo5513/HumanML3D.git) and copy the data dir to our repository:
 
@@ -78,7 +81,7 @@ To analyze the training process, you can use TensorBoard. Start it by running:
 ```bash
 tensorboard --logdir_spec save/mdm_avg_dno
 ```
-### 📊 Analyze results
+### 🔎 Analyze results
 
 To analyze the videos and results of many runs in a folder, e.g. `save/mdm_avg_dno/trajectory_editing`, run the following command:
 
@@ -89,9 +92,19 @@ python -m dno_optimized.analyze save/mdm_avg_dno/trajectory_editing
 Open http://localhost:8000 in your browser to see the videos and results in a table.
 To extract the results open http://localhost:8000/results where the results are nicely formatted in a table that can be copied to a spreadsheet.
 
+### 📑 Generate results of our analysis
+
+To generate the results of our analysis in section 4.4 and 4.5 of our report, run the following batch scripts using slurm. Please be aware that this will take up to one day to finish if executed sequentially.
+
+```bash
+sbatch ./generate_adam.sh
+sbatch ./generate_lbfgs.sh
+sbatch ./generate_levenberg_marquardt.sh
+```
+
 ## ⚡ Controversial Example
 
-To produce the results for the controversial example discussed in section 4.5 our our report, run the following commands:
+To produce the results for the controversial example discussed in section 4.6 our our report, run the following commands:
 
 ```bash
 python -m dno_optimized.generate config/controversial_example_adam.yml
