@@ -131,6 +131,18 @@ This code was tested on ETH Zurich's
 -   miniconda version 25.3.1
 -   GPU: NVidia GTX 1080 Ti with 3584 CUDA cores and 11 GB RAM
 
+## 🗂️ Structure
+
+Our code changes are mostly contained in the `dno_optimized` folder, with the following files:
+-   `analyze.py`: Script to analyze the results of DNO runs.
+-   `callback_util.py`: Set up and utility functions for the callbacks used in DNO.
+-   `generate.py`: Main script to run DNO with different optimizers.
+-   `levenberg_marquardt.py`: Our implementation of the Levenberg-Marquardt optimizer.
+-   `noise_optimizer.py`: Our version of the DNO optimizer.
+-   `options.py`: File containing the structured OmegaConf options.
+-   `save_video.py`: Utility script to save videos of edited motions.
+-   `smpl_converter.py`: Utility script to convert the old `SMPL_NEUTRAL.pkl` file to a format compatible with Python 3.12.
+
 ## ℹ️ More Information on DNO
 
 For more information on how to use the other DNO files, please have a look at the
