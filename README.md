@@ -128,6 +128,11 @@ This code was tested on ETH Zurich's
 For more information on how to use the other DNO files, please have a look at the
 [main repo](https://www.github.com/korrawe/diffusion-noise-optimization).
 
+## 📊 Report and Visualization Code
+
+All code for generating visualizations in the report and analyzing qualitative results can be found here: 
+<https://github.com/fedj99/dh25-team3-report>
+
 ## 📄 License
 
 This code is distributed under an [MIT LICENSE](LICENSE).
